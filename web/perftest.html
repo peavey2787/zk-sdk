@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>zk-sdk browser performance</title></head>
+<body>
+<pre id="result">RUNNING</pre>
+<script type="module">
+// Browser proving-latency measurement driven by scripts/browser_test.py. Reports p50/p95/p99 of the
+// whole worker-side prove call at the default policy; it never alters security parameters.
+const RUNS = 20, TARGET_MS = 500, CEILING_MS = 1000;
+const CIRCUITS = {
+  age_over: '{"age":"20","threshold":"18"}',
+};
+const worker = new Worker("./worker.js", { type: "module" });
+let nextId = 0;
+const call = (op, args) => new Promise((resolve) => {
+  const id = nextId++;
+  const listen = ({ data }) => {
+    if (data.id !== id) return;
+    worker.removeEventListener("message", listen);
+    resolve(data);
+  };
+  worker.addEventListener("message", listen);
+  worker.postMessage({ id, op, args });
+});
+const bytes = async (path) => new Uint8Array(await (await fetch(path)).arrayBuffer());
+const pct = (sorted, p) => sorted[Math.floor(((sorted.length - 1) * p) / 100)];
+
+async function measure(name, input) {
+  const r1cs = await bytes(`circuits/${name}.r1cs`);
+  const sym = await (await fetch(`circuits/${name}.sym`)).text();
+  const keys = (await call("setup", { r1cs, bits: 116, soundness: "johnson" })).result;
+  const wtns = (await call("witness", { r1cs, sym, input })).result;
+  const times = [];
+  for (let i = 0; i < RUNS; i++) times.push((await call("prove", { provingKey: keys.proving, wtns })).ms);
+  times.sort((a, b) => a - b);
+  return { p50_ms: pct(times, 50), p95_ms: pct(times, 95), p99_ms: pct(times, 99), runs: RUNS };
+}
+
+async function main() {
+  const results = {};
+  for (const [name, input] of Object.entries(CIRCUITS)) results[name] = await measure(name, input);
+  const worst = Math.max(...Object.values(results).map((r) => r.p50_ms));
+  const verdict = worst > CEILING_MS ? `PERF MISS: worst p50 ${worst} ms exceeds the ${CEILING_MS} ms ceiling`
+    : `PASS: worst p50 ${worst} ms` + (worst > TARGET_MS ? ` (above the ${TARGET_MS} ms target)` : "");
+  return `${verdict}\n${JSON.stringify(results)}`;
+}
+
+main().then((r) => (document.getElementById("result").textContent = r))
+  .catch((e) => (document.getElementById("result").textContent = `FAIL ${e}`));
+</script>
+</body>
+</html>

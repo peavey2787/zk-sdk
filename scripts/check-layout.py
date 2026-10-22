@@ -24,4 +24,11 @@ for file in root.rglob("*"):
         assert file.suffix not in PRIVATE, f"private artifact in repo: {file}"
 
 assert not list((root / "web" / "pkg").glob("*")) or (root / ".gitignore").read_text().count("/web/pkg/")
+# Security downgrade guard: WHIR grinding/query parameters may only come from upstream's
+# recommendation; no source may assign or clamp them (tests that read them are fine).
+FORBIDDEN = re.compile(r"\.(pow_bits|folding_factor|starting_log_inv_rate)\s*(=[^=]|\.(min|max|saturating_sub))|MAX_POW_BITS")
+for file in (root / "crates").rglob("*.rs"):
+    text = file.read_text().split("#[cfg(test)]")[0]
+    assert not FORBIDDEN.search(text), f"WHIR parameter modification in {file}; see docs/SECURITY.md"
+
 print("PASS: project layout, six facade method names, no private artifacts")

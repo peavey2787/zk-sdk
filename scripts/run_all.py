@@ -2,8 +2,12 @@
 """Validation driver behind run-all-windows.cmd and run-all-linux.sh.
 
 fast: layout, pinned revisions, fmt, clippy -D warnings, tests (real prove/verify, no mocks).
-full: fast plus the wasm bundle, real-browser test, native/wasm interop matrix, cargo audit
-      and the native proving-latency gate. Logs and a timing report land in target/validation/.
+full: fast plus the wasm bundle, real-browser test, native/wasm interop matrix and cargo audit
+      (security and correctness gates).
+perf: separate performance regression gates (native and real-browser p50/p95/p99 against the
+      500 ms target / 1000 ms ceiling). A miss is reported as such; it is never a reason to lower
+      security parameters or raise the threshold.
+Logs and a timing report land in target/validation/.
 """
 import re
 import shutil
@@ -29,7 +33,11 @@ FULL = [
     ("browser", [PY, "scripts/browser_test.py"]),
     ("interop", [PY, "scripts/interop.py"]),
     ("audit", CARGO + ["audit", "--deny", "warnings"]),
-    ("perf", [PY, "scripts/perf_gate.py"]),
+]
+PERF = [
+    ("wasm-build", [PY, "scripts/build_wasm.py"]),
+    ("perf-native", [PY, "scripts/perf_gate.py"]),
+    ("perf-browser", [PY, "scripts/browser_test.py", "perftest.html"]),
 ]
 
 
@@ -60,11 +68,11 @@ def run(name, command) -> bool:
 
 
 def main(mode: str) -> int:
-    if mode not in ("fast", "full"):
-        print("usage: run_all.py [fast|full]")
+    if mode not in ("fast", "full", "perf"):
+        print("usage: run_all.py [fast|full|perf]")
         return 2
     OUT.mkdir(parents=True, exist_ok=True)
-    steps = FAST + (FULL if mode == "full" else [])
+    steps = {"fast": FAST, "full": FAST + FULL, "perf": PERF}[mode]
     report = []
     for name, command in steps:
         start = time.monotonic()

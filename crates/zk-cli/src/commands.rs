@@ -14,7 +14,7 @@ const USAGE: &str = "usage:
   zk prove   --pk F --r1cs F --sym F --input F.json --proof F
   zk verify  --vk F --expected N,N,... --proof F
   zk inspect --proof F
-  zk bench   --pk F --r1cs F --sym F --input F.json [--runs N]   (median and p95 per phase)";
+  zk bench   --pk F --r1cs F --sym F --input F.json [--runs N]   (p50/p95/p99 per run)";
 
 /// Largest circuit, key, witness or proof file this tool will load.
 const MAX_FILE_BYTES: u64 = 4 * 1024 * 1024 * 1024;
@@ -139,9 +139,10 @@ fn bench(flags: &Flags) -> Result<(), String> {
         );
     }
     println!(
-        "total runs={runs} median_ms={} p95_ms={}",
+        "total runs={runs} p50_ms={} p95_ms={} p99_ms={}",
         percentile(&mut total, 50) / 1000,
-        percentile(&mut total, 95) / 1000
+        percentile(&mut total, 95) / 1000,
+        percentile(&mut total, 99) / 1000
     );
     Ok(())
 }

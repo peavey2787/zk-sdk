@@ -16,7 +16,8 @@ Rust (stable), Python 3, Node 20+ for the interop script, and for the browser pa
 | browser | `scripts/browser_test.py` serves `web/` and drives `selftest.html` in headless Chrome/Edge over the DevTools protocol |
 | interop | `scripts/interop.py`: native CLI and wasm-under-Node each produce proofs and each verifies the other's, with wrong-statement and corrupted-proof negatives for every pair and circuit |
 | audit | `cargo audit --deny warnings` (two unmaintained-crate notices are ignored by ID in `.cargo/audit.toml`) |
-| perf | `scripts/perf_gate.py`: median native prove latency per circuit must stay under 1000 ms (target 500) |
+
+Performance is a separate mode, `run-all-... perf`: `perf_gate.py` (native) and `browser_test.py perftest.html` (real browser) report p50/p95/p99 against the 500 ms target / 1000 ms ceiling on p50. They are not part of `full`.
 
 Logs: `target/validation/*.log`; timings: `target/validation/report.txt`.
 

@@ -18,3 +18,20 @@ jobs:
       - name: Full validation
         shell: bash
         run: python scripts/run_all.py full
+  performance:
+    # Latency regression gate, deliberately separate from the security/correctness gate above.
+    # A miss is reported here; it never lowers a parameter and never blocks correctness results.
+    continue-on-error: true
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - run: cargo install wasm-pack --locked
+      - name: Performance gates (native and browser)
+        shell: bash
+        run: python scripts/run_all.py perf

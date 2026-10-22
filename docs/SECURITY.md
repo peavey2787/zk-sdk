@@ -13,9 +13,11 @@
 
 Default 116 bits, full ZK, Johnson bound. Upstream accepts 80..=123 in principle; the portable promise is narrower, **100..=118**, because Poseidon commitments cap attainable security at 118 bits and low levels fail setup for some circuits (observed for 80 with the Johnson mode and 95-97 with unique decoding). Every level in 100..=118 was swept under all three soundness modes on `age_over` (setup, prove, verify). Out-of-range or non-ZK policies are rejected at `setup`, and a proof is rejected under any other policy. There is no 128-bit claim, and 116 bits is a composed-soundness target of the classical analysis, not a quantum security category.
 
-## Proof-of-work cap
+## Proof-of-work grinding
 
-Grinding is capped at 12 bits instead of upstream's recommended 22. Upstream recomputes the query budget from `security_level - pow_bits` for prover and verifier alike, so the configured level is still what is targeted; the verifier rejects proofs whose witness fails the (lower) work check. This is a latency/proof-size trade-off made in `zk-spartan-whir/src/params.rs`; it has not had independent cryptographic review.
+Parameters are upstream's `recommended_quintic_zk_whir_params` unmodified, including its proof-of-work grinding. An earlier revision capped grinding at 12 bits for latency; it was removed because the claim that the query budget compensates was unverified (proof size did not change, which suggests it does not) and security takes priority over the latency target.
+
+Regression guards: unit tests in `zk-spartan-whir/src/params.rs` pin the profile (WHIR parameters equal upstream's recommendation for every policy and size, grinding not below upstream's floor, requested bits/soundness passed through, full-ZK only, pinned revision), and `scripts/check-layout.py` fails the build if any source assigns or clamps WHIR parameters. Not yet done: an independent recomputation of the end-to-end soundness error from the WHIR/Spartan formulas. The 116-bit figure is a configured classical protocol-soundness target; no post-quantum security level is claimed.
 
 ## Randomness and secrets
 

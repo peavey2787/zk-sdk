@@ -1,4 +1,5 @@
-"""Real-browser test: serve web/ and read selftest.html results from headless Edge or Chrome over CDP."""
+"""Real-browser test: serve web/ and read a page's #result (default selftest.html; perftest.html for
+timings) from headless Edge or Chrome over CDP."""
 import functools
 import http.server
 import shutil
@@ -28,7 +29,7 @@ def find_browser():
     return None
 
 
-def main() -> int:
+def main(page: str) -> int:
     browser = find_browser()
     if browser is None:
         print("NOT VALIDATED: no Chrome/Edge/Chromium found for the browser test")
@@ -36,7 +37,7 @@ def main() -> int:
     handler = functools.partial(QuietHandler, directory=str(ROOT / "web"))
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    url = f"http://127.0.0.1:{server.server_port}/selftest.html"
+    url = f"http://127.0.0.1:{server.server_port}/{page}"
     profile = ROOT / "target" / "browser-profile"
     port = 9333
     process = subprocess.Popen([browser, "--headless=new", "--disable-gpu", f"--user-data-dir={profile}",
@@ -51,4 +52,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1] if len(sys.argv) > 1 else "selftest.html"))

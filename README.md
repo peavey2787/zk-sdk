@@ -51,7 +51,7 @@ python scripts/build_wasm.py          # needs wasm-pack and the wasm32-unknown-u
 python -m http.server 8000 --directory web
 ```
 
-Open `http://localhost:8000`. Witness generation, setup, proving and verification run in a Web Worker, all inside the page; private inputs and keys are never sent anywhere. Proofs and verifying keys can be exported, imported and deliberately corrupted. Proving is single-threaded (no threads are assumed) and takes roughly 100 ms. Any static host works; the page has no server component.
+Open `http://localhost:8000`. Witness generation, setup, proving and verification run in a Web Worker, all inside the page; private inputs and keys are never sent anywhere. Proofs and verifying keys can be exported, imported and deliberately corrupted. Proving is single-threaded (no threads are assumed), so it is slower than native (see PROGRESS). Any static host works; the page has no server component.
 
 ## Security policy
 
@@ -63,7 +63,7 @@ Open `http://localhost:8000`. Witness generation, setup, proving and verificatio
 run-all-windows.cmd full        # or ./run-all-linux.sh full; omit "full" for the fast subset
 ```
 
-Fast: layout, pinned revisions, `fmt`, `clippy -D warnings`, tests. Full adds the wasm build, a real-browser test, the native/wasm interop matrix, `cargo audit` and a native proving-latency gate (500 ms target, 1000 ms ceiling). Logs and timings land in `target/validation/`. Linux and macOS are **NOT VALIDATED** until you run it there; see [PROGRESS](docs/PROGRESS.md).
+Fast: layout, pinned revisions, `fmt`, `clippy -D warnings`, tests. Full adds the wasm build, a real-browser test, the native/wasm interop matrix, and `cargo audit`. `perf` is a separate mode with native and browser latency gates (500 ms target, 1000 ms ceiling), which the secure prover currently misses in the browser. Logs and timings land in `target/validation/`. Linux and macOS are **NOT VALIDATED** until you run it there; see [PROGRESS](docs/PROGRESS.md).
 
 ## Workspace
 

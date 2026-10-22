@@ -15,18 +15,21 @@ Measured on Windows 11, native `x86_64-pc-windows-msvc`, rustc 1.98.1; wasm in h
 | macOS | **NOT VALIDATED** | |
 | Sweep on circuits other than age_over | Not done | |
 
-## Performance (Ryzen 7 5800X, Windows 11, default 116-bit full ZK)
+## Performance (Ryzen 7 5800X, Windows 11, default 116-bit full ZK, upstream parameters)
 
-Gate: target 500 ms, ceiling 1000 ms, median of the whole prove call (`scripts/perf_gate.py`, part of `run-all ... full`, default portable build).
+Latency is gated separately from security/correctness: `run-all ... perf` (own CI job, `continue-on-error`). The target is 500 ms and the ceiling 1000 ms on p50; a miss is reported, not hidden. 20 runs per circuit, whole prove call, default portable build, 16 threads for native (`scripts/perf_gate.py`, `scripts/browser_test.py perftest.html`; raw numbers in `target/validation/perf-*.json`).
 
-| Setting | Median prove | p95 |
-|---|---|---|
-| native, 16 threads, portable build | ~40-50 ms | <200 ms |
-| native, 1 thread (`RAYON_NUM_THREADS=1`) | ~69 ms | ~79 ms |
-| wasm in Node, single thread (age_over) | ~70 ms (first run ~125 ms) | |
-| wasm in the browser | re-measure; run `web/` | |
+| Circuit | Native p50 | p95 | p99 | Browser WASM p50 | p95 | p99 |
+|---|---|---|---|---|---|---|
+| age_over | 689 ms | 1886 ms | 1886 ms | 6881 ms | 20256 ms | 20256 ms |
+| arithmetic | 522 ms | 1150 ms | 1150 ms | not measured | | |
+| millionaires | 379 ms | 1561 ms | 1561 ms | not measured | | |
 
-Root cause of the earlier 8-19 s browser times: upstream's recommended proof-of-work ceiling of 22 bits makes the prover grind a random nonce. With threads that is hidden; single-threaded it was ~1.5 s median and up to ~20 s p95. Capping it at 12 bits (query counts are derived from `security - pow_bits`, so the security target is unchanged; proof size unchanged at ~215 KB) gives ~70 ms with no variance. Key decode/prepare/witness import/encode total under 0.5 ms, so caching the prepared key saves nothing. The AVX2 build is no longer required; it helps natively but the portable build already meets the target. `simd128` for wasm was measured slower (~105 ms vs ~70 ms) and is not used.
+(With 20 runs p95 and p99 are the same sample.) Single-thread native earlier measured ~2100 ms p50 / ~12000 ms p95 on age_over; numbers vary run to run (the machine is not quiet).
+
+**The secure prover does not meet the 1000 ms target in the browser (p50 ~6.9 s, p95 ~20 s) and misses it at p95/p99 natively.** Cause: upstream's proof-of-work grinding is a random nonce search with a heavy tail; threads hide it natively but browser WASM is single-threaded. The 70-90 ms figures reported earlier came from a 12-bit grinding cap that was reverted because its security effect was not established.
+
+Unresolved: security-preserving options not yet evaluated, each requiring its own soundness review: multi-worker grinding (needs an upstream change or WASM threads with cross-origin isolation), an upstream-approved parameter schedule with matching soundness calculations, a faster Poseidon hash, or a different transparent backend. Applications must prove asynchronously (the demo already runs in a Worker). Key decode/prepare/witness import/encode total under 0.5 ms, so key caching saves nothing. The AVX2 build is optional and not benchmarked separately yet.
 
 Verify ~17-32 ms; proof ~215 KB; vk ~3-8 KB.
 
