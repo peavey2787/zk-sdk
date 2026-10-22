@@ -1,0 +1,11 @@
+[package]
+name = "zk-witness"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Portable pure-Rust circom witness calculator for KoalaBear R1CS (native and wasm32)"
+
+[dependencies]
+serde_json.workspace = true
+thiserror.workspace = true

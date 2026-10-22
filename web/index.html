@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>zk-sdk in the browser</title>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; max-width: 46rem; margin: 2rem auto; padding: 0 1rem; }
+  fieldset { margin: 1rem 0; padding: 1rem; }
+  label { display: block; margin: .5rem 0; }
+  input, select { width: 14rem; }
+  #expected { width: 100%; }
+  .row { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
+  table { border-collapse: collapse; } td { padding: .1rem 1rem .1rem 0; }
+  #log div { font: 13px/1.4 ui-monospace, monospace; padding: .15rem 0; }
+  .good { color: #0a7a2f; } .bad { color: #b00020; } .warn { color: #8a5a00; }
+  .note { color: #555; font-size: .85rem; }
+</style>
+</head>
+<body>
+<h1>zk-sdk in the browser</h1>
+<p class="note">Witness generation, proving and verification run locally as WebAssembly in a Web Worker.
+Private inputs and the proving key are never sent to a server. Backend: <span id="backend">loading...</span></p>
+
+<fieldset>
+  <legend>Statement</legend>
+  <label>Circuit <select id="circuit"></select></label>
+  <div id="fields"></div>
+  <label>Security <select id="bits"></select></label>
+  <label>Soundness assumption
+    <select id="soundness">
+      <option value="johnson" selected>Johnson bound (default)</option>
+      <option value="unique">Unique decoding</option>
+      <option value="capacity">Capacity bound</option>
+    </select>
+  </label>
+</fieldset>
+
+<fieldset>
+  <legend>Prove and verify</legend>
+  <div class="row">
+    <button id="setup">1. Setup keys</button>
+    <button id="prove">2. Prove locally</button>
+    <button id="verify">3. Verify locally</button>
+  </div>
+  <label>Public statement the verifier trusts (circom order: outputs, then public inputs) &mdash; edit it to watch verification reject
+    <input id="expected" type="text">
+  </label>
+  <table>
+    <tr><td>Setup</td><td id="t-setup">-</td></tr>
+    <tr><td>Witness</td><td id="t-witness">-</td></tr>
+    <tr><td>Prove</td><td id="t-prove">-</td></tr>
+    <tr><td>Verify</td><td id="t-verify">-</td></tr>
+  </table>
+</fieldset>
+
+<fieldset>
+  <legend>Export, import and invalid proofs</legend>
+  <div class="row">
+    <button id="exportProof">Export proof</button>
+    <button id="exportVk">Export verifying key</button>
+    <button id="tamper">Corrupt the proof</button>
+  </div>
+  <label>Import proof <input id="importProof" type="file"></label>
+  <label>Import verifying key <input id="importVk" type="file"></label>
+</fieldset>
+
+<div id="log"></div>
+<script type="module" src="app.js"></script>
+</body>
+</html>

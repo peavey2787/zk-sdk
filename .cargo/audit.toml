@@ -1,0 +1,7 @@
+# Both are "unmaintained" notices, not vulnerabilities. Each is accepted explicitly, by ID, and
+# documented in docs/SECURITY.md; any other advisory or warning still fails `cargo audit`.
+[advisories]
+ignore = [
+  "RUSTSEC-2025-0141", # bincode 1.x: the fixed-int little-endian wire format is the artifact format
+  "RUSTSEC-2024-0436", # paste: proc-macro only, transitive dependency of the pinned upstream
+]

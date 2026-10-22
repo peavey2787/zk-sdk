@@ -1,0 +1,18 @@
+[package]
+name = "zk-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Native command-line adapter for the zk-sdk (file I/O, interop and release tooling)"
+publish = false
+
+[[bin]]
+name = "zk"
+path = "src/main.rs"
+
+[dependencies]
+zk-sdk = { path = "../zk-sdk" }
+
+[dev-dependencies]
+tempfile.workspace = true

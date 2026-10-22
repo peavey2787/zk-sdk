@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>zk-sdk browser self-test</title></head>
+<body>
+<pre id="result">RUNNING</pre>
+<script type="module">
+// Automated end-to-end check driven by scripts/browser_test.py in a real headless browser.
+const worker = new Worker("./worker.js", { type: "module" });
+let nextId = 0;
+const call = (op, args) => new Promise((resolve) => {
+  const id = nextId++;
+  const listen = ({ data }) => {
+    if (data.id !== id) return;
+    worker.removeEventListener("message", listen);
+    resolve(data);
+  };
+  worker.addEventListener("message", listen);
+  worker.postMessage({ id, op, args });
+});
+const bytes = async (path) => new Uint8Array(await (await fetch(path)).arrayBuffer());
+
+async function main() {
+  const r1cs = await bytes("circuits/age_over.r1cs");
+  const sym = await (await fetch("circuits/age_over.sym")).text();
+  const keys = (await call("setup", { r1cs, bits: 116, soundness: "johnson" })).result;
+  const wtns = (await call("witness", { r1cs, sym, input: '{"age":"20","threshold":"18"}' })).result;
+  const proof = (await call("prove", { provingKey: keys.proving, wtns })).result;
+  const verify = (expected, p) => call("verify", { verifyingKey: keys.verifying, expected, proof: p });
+  const bad = proof.slice();
+  bad[bad.length >> 1] ^= 0x55;
+  const checks = {
+    accepts_valid: (await verify([1, 18], proof)).ok,
+    rejects_wrong_statement: !(await verify([0, 18], proof)).ok,
+    rejects_corrupted_proof: !(await verify([1, 18], bad)).ok,
+    rejects_unsupported_security: !(await call("setup", { r1cs, bits: 128, soundness: "johnson" })).ok,
+    rejects_out_of_range_witness: !(await call("witness", { r1cs, sym, input: '{"age":"300","threshold":"18"}' })).ok,
+  };
+  const failed = Object.keys(checks).filter((name) => !checks[name]);
+  return failed.length ? `FAIL ${failed.join(",")}` : "PASS browser self-test";
+}
+
+main().then((r) => (document.getElementById("result").textContent = r))
+  .catch((e) => (document.getElementById("result").textContent = `FAIL ${e}`));
+</script>
+</body>
+</html>

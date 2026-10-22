@@ -1,0 +1,20 @@
+[package]
+name = "zk-wasm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Browser (wasm32) bindings: witness generation, proving and verification run locally"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+zk-sdk = { path = "../zk-sdk" }
+wasm-bindgen = "0.2"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# Browser CSPRNG (crypto.getRandomValues). There is no fallback RNG: if the browser lacks one,
+# proving fails instead of silently using weak randomness.
+getrandom = { version = "0.4", features = ["wasm_js"] }

@@ -1,0 +1,19 @@
+[workspace]
+members = ["crates/zk-core", "crates/zk-witness", "crates/zk-spartan-whir", "crates/zk-sdk", "crates/zk-cli", "crates/zk-wasm"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+rust-version = "1.85"
+
+[workspace.dependencies]
+spartan-whir = { git = "https://github.com/ethereum/spartan-whir", rev = "02bec8d0c13417452b0a1a52e585d20a8b47cee9" }
+web-time = "1.1"
+serde = { version = "1.0", features = ["derive"] }
+sha2 = "0.10"
+bincode = "1.3"
+thiserror = "2.0"
+tempfile = "3.15"
+serde_json = "1.0"
