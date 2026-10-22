@@ -27,3 +27,7 @@ See `circuits/README.md`. Compiled vectors in `testdata/` are small and tracked.
 ## Rules
 
 Warnings are errors, no dead or duplicated code, and the portable workflow lives once in `zk_sdk::portable`.
+
+## Optimized native build (optional)
+
+`python scripts/build_optimized.py` builds `zk` for x86-64-v3 (AVX2/BMI2) into `target/optimized`. It is faster but will not run on older CPUs; the default `cargo build --release` stays portable.

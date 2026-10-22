@@ -4,21 +4,21 @@ mod commands;
 
 use std::process::ExitCode;
 
-/// The build targets x86-64-v3 (see .cargo/config.toml); refuse to run elsewhere instead of
-/// crashing on an illegal instruction.
-#[cfg(target_arch = "x86_64")]
+/// Optimized builds (`scripts/build_optimized.py`) assume AVX2 and BMI2; refuse to run on a CPU
+/// without them instead of crashing on an illegal instruction. Portable builds never check.
+#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
 fn cpu_supported() -> bool {
     is_x86_feature_detected!("avx2") && is_x86_feature_detected!("bmi2")
 }
 
-#[cfg(not(target_arch = "x86_64"))]
+#[cfg(not(all(target_arch = "x86_64", target_feature = "avx2")))]
 fn cpu_supported() -> bool {
     true
 }
 
 fn main() -> ExitCode {
     if !cpu_supported() {
-        eprintln!("error: this build requires a CPU with AVX2 and BMI2 (x86-64-v3)");
+        eprintln!("error: this build is the optimized build and needs a CPU with AVX2 and BMI2; use the default build");
         return ExitCode::FAILURE;
     }
     let args: Vec<String> = std::env::args().skip(1).collect();

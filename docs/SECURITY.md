@@ -13,6 +13,10 @@
 
 Default 116 bits, full ZK, Johnson bound. Upstream accepts 80..=123 in principle; the portable promise is narrower, **100..=118**, because Poseidon commitments cap attainable security at 118 bits and low levels fail setup for some circuits (observed for 80 with the Johnson mode and 95-97 with unique decoding). Every level in 100..=118 was swept under all three soundness modes on `age_over` (setup, prove, verify). Out-of-range or non-ZK policies are rejected at `setup`, and a proof is rejected under any other policy. There is no 128-bit claim, and 116 bits is a composed-soundness target of the classical analysis, not a quantum security category.
 
+## Proof-of-work cap
+
+Grinding is capped at 12 bits instead of upstream's recommended 22. Upstream recomputes the query budget from `security_level - pow_bits` for prover and verifier alike, so the configured level is still what is targeted; the verifier rejects proofs whose witness fails the (lower) work check. This is a latency/proof-size trade-off made in `zk-spartan-whir/src/params.rs`; it has not had independent cryptographic review.
+
 ## Randomness and secrets
 
 Native builds use the OS CSPRNG; wasm uses the browser CSPRNG (`crypto.getRandomValues`) and fails rather than falling back. Witnesses and proving keys are sensitive; `PrivateInputs` has a redacted `Debug`. Proofs expose their public inputs. Browser memory is not zeroized, and there has been no side-channel review.

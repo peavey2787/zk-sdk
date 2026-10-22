@@ -1,10 +1,2 @@
-# AVX2 (x86-64-v3) is what makes the field arithmetic fast: ~6x faster proving than baseline
-# x86-64. zk-cli checks for AVX2 at startup and exits with a clear message instead of crashing.
-[target.x86_64-pc-windows-msvc]
-rustflags = ["-C", "target-cpu=x86-64-v3"]
-
-[target.x86_64-unknown-linux-gnu]
-rustflags = ["-C", "target-cpu=x86-64-v3"]
-
 [target.wasm32-unknown-unknown]
-rustflags = ["--cfg", "getrandom_backend=\"wasm_js\"", "-C", "target-feature=+simd128"]
+rustflags = ["--cfg", "getrandom_backend=\"wasm_js\""]

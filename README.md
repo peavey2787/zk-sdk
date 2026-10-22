@@ -51,7 +51,7 @@ python scripts/build_wasm.py          # needs wasm-pack and the wasm32-unknown-u
 python -m http.server 8000 --directory web
 ```
 
-Open `http://localhost:8000`. Browser proving takes seconds, not milliseconds (see PROGRESS). Witness generation, setup, proving and verification run in a Web Worker, all inside the page; private inputs and keys are never sent anywhere. Proofs and verifying keys can be exported, imported and deliberately corrupted. Proving is single-threaded (no threads are assumed). Any static host works; the page has no server component.
+Open `http://localhost:8000`. Witness generation, setup, proving and verification run in a Web Worker, all inside the page; private inputs and keys are never sent anywhere. Proofs and verifying keys can be exported, imported and deliberately corrupted. Proving is single-threaded (no threads are assumed) and takes roughly 100 ms. Any static host works; the page has no server component.
 
 ## Security policy
 

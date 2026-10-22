@@ -66,7 +66,7 @@ def main():
     backends = {name: Backend(name) for name in ("native", "wasm")}
     tmp = ROOT / "target" / "interop"
     shutil.rmtree(tmp, ignore_errors=True)
-    tmp.mkdir(parents=True)
+    tmp.mkdir(parents=True, exist_ok=True)
     for circuit, statement in STATEMENTS.items():
         r1cs = ROOT / "testdata" / circuit / f"{circuit}.r1cs"
         for producer, verifier in itertools.product(backends.values(), repeat=2):

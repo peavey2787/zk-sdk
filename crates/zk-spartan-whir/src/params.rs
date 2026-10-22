@@ -2,7 +2,7 @@
 
 use spartan_whir::{
     recommended_quintic_zk_whir_params, MatrixClosingMode, PoseidonZkSetupConfig, SecurityConfig,
-    SoundnessAssumption, DEFAULT_ZK_ELL, DEFAULT_ZK_MASK_LOG_INV_RATE,
+    SoundnessAssumption, WhirParams, DEFAULT_ZK_ELL, DEFAULT_ZK_MASK_LOG_INV_RATE,
 };
 use zk_core::{Capabilities, SecurityPolicy, Soundness};
 
@@ -38,6 +38,18 @@ fn assumption(soundness: Soundness) -> SoundnessAssumption {
     }
 }
 
+/// Ceiling on proof-of-work grinding, in bits. Upstream recommends 22, whose random search costs
+/// seconds (up to ~20 s in single-threaded wasm). Upstream derives the query count from
+/// `security - pow_bits`, so lowering it keeps the security target and trades a few more queries
+/// for latency. 12 bits measured ~75 ms single-threaded with unchanged proof size.
+const MAX_POW_BITS: u32 = 12;
+
+fn whir_params(num_vars: usize) -> WhirParams {
+    let mut params = recommended_quintic_zk_whir_params(num_vars);
+    params.pow_bits = params.pow_bits.min(MAX_POW_BITS);
+    params
+}
+
 pub fn setup_config(policy: SecurityPolicy, num_vars: usize) -> PoseidonZkSetupConfig {
     let bits = u32::from(policy.bits);
     PoseidonZkSetupConfig {
@@ -47,7 +59,7 @@ pub fn setup_config(policy: SecurityPolicy, num_vars: usize) -> PoseidonZkSetupC
             merkle_security_bits: bits,
             soundness_assumption: assumption(policy.soundness),
         },
-        whir_params: recommended_quintic_zk_whir_params(num_vars),
+        whir_params: whir_params(num_vars),
         spark_whir_params: None,
         ell_zk: DEFAULT_ZK_ELL,
         mask_log_inv_rate: DEFAULT_ZK_MASK_LOG_INV_RATE,
