@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/zk-core", "crates/zk-witness", "crates/zk-spartan-whir", "crates/zk-sdk", "crates/zk-cli", "crates/zk-wasm"]
+members = ["crates/zk-circuitgen", "crates/zk-core", "crates/zk-witness", "crates/zk-spartan-whir", "crates/zk-sdk", "crates/zk-cli", "crates/zk-wasm"]
 resolver = "2"
 
 [workspace.package]
@@ -10,6 +10,10 @@ rust-version = "1.85"
 
 [workspace.dependencies]
 spartan-whir = { git = "https://github.com/ethereum/spartan-whir", rev = "02bec8d0c13417452b0a1a52e585d20a8b47cee9" }
+p3-field = { git = "https://github.com/Client-Side-Proving/Plonky3.git", rev = "458ef546a251ab4d9d73c453d24a414334786ca0" }
+p3-koala-bear = { git = "https://github.com/Client-Side-Proving/Plonky3.git", rev = "458ef546a251ab4d9d73c453d24a414334786ca0" }
+p3-poseidon2 = { git = "https://github.com/Client-Side-Proving/Plonky3.git", rev = "458ef546a251ab4d9d73c453d24a414334786ca0" }
+p3-symmetric = { git = "https://github.com/Client-Side-Proving/Plonky3.git", rev = "458ef546a251ab4d9d73c453d24a414334786ca0" }
 web-time = "1.1"
 serde = { version = "1.0", features = ["derive"] }
 sha2 = "0.10"

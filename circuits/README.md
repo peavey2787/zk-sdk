@@ -11,10 +11,17 @@ Sources for the circuits whose compiled `.r1cs`/`.sym` (and a reference `.wtns` 
 
 Comparison circuits (`lib/compare.circom`) are range-checked. The KoalaBear field is 31 bits, so `LessThan(n)` is only sound for `n <= 29`.
 
-Recompile with the KoalaBear fork of Circom (`-p koalabear`):
+## Built-in predicate library
+
+`predicates/library.circom` holds `OpenCommitment`, `CompareToBound`, `InRange` and `CompareCommitted`, instantiated at 32/64/128 bits by 12 generated mains (`predicates/*_{32,64,128}.circom`). Values are 16-bit limbs (signed values are offset-binary), commitments are domain-separated Poseidon2 sponge digests (`lib/commit.circom`, constants generated from the pinned Plonky3 by `crates/zk-circuitgen`). The compiled circuits are bundled into the SDK; `crates/zk-sdk/src/predicate/approved.rs` records each SHA-256.
+
+Rebuild everything reproducibly (clones the pinned Circom fork into the git-ignored `target/toolchain/circom`; nothing outside this repository is touched):
 
 ```sh
-circom circuits/age_over.circom -p koalabear --r1cs --sym -o testdata/age_over
+python scripts/build_circuits.py          # rewrite testdata/predicates and approved.rs
+python scripts/build_circuits.py --check  # fail if a fresh build differs from the repository
 ```
+
+Other circuits are recompiled with the same compiler: `target/toolchain/circom/target/release/circom circuits/age_over.circom --prime koalabear --r1cs --sym -o testdata/age_over`.
 
 No C++ witness generator is needed: `zk-witness` solves the witness from the `.r1cs`/`.sym` pair in Rust, natively and in WebAssembly, and always re-checks that every constraint holds.

@@ -1,0 +1,12 @@
+[package]
+name = "zk-circuitgen"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Developer tool: emits the circom Poseidon2 constants from Plonky3's KoalaBear parameters"
+
+[dependencies]
+p3-field.workspace = true
+p3-koala-bear.workspace = true
+p3-poseidon2.workspace = true

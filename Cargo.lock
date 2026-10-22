@@ -1015,6 +1015,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "zk-circuitgen"
+version = "0.1.0"
+dependencies = [
+ "p3-field",
+ "p3-koala-bear",
+ "p3-poseidon2",
+]
+
+[[package]]
 name = "zk-cli"
 version = "0.1.0"
 dependencies = [
@@ -1036,7 +1045,13 @@ dependencies = [
 name = "zk-sdk"
 version = "0.1.0"
 dependencies = [
+ "getrandom",
+ "p3-field",
+ "p3-koala-bear",
+ "p3-symmetric",
  "serde",
+ "serde_json",
+ "sha2",
  "tempfile",
  "zk-core",
  "zk-spartan-whir",

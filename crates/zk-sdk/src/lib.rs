@@ -7,6 +7,7 @@
 #[cfg(not(target_arch = "wasm32"))]
 pub mod files;
 pub mod portable;
+pub mod predicate;
 mod simple;
 
 pub use simple::{Circuit, Prover, Verifier};

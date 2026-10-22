@@ -14,6 +14,8 @@ pub enum ZkError {
     Unavailable(String),
     #[error("backend operation failed: {0}")]
     Backend(String),
+    #[error("invalid predicate: {0}")]
+    Predicate(String),
     #[error("proof does not match the expected statement or verifying key")]
     StatementMismatch,
 }

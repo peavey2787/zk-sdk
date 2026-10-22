@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::{Result, ZkError};
 
 /// Which list-decoding assumption the proof system's soundness analysis relies on.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Soundness {
     UniqueDecoding,
     JohnsonBound,
@@ -27,7 +27,7 @@ impl std::str::FromStr for Soundness {
 
 /// A configured security target, not a certified quantum-security level.
 /// The default is 116-bit full zero knowledge under the Johnson bound.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SecurityPolicy {
     pub bits: u16,
     pub full_zero_knowledge: bool,

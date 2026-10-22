@@ -1,16 +1,5 @@
 pragma circom 2.2.0;
-
-template Num2Bits(n) {
-    signal input in;
-    signal output out[n];
-    var sum = 0;
-    for (var i = 0; i < n; i++) {
-        out[i] <-- (in >> i) & 1;
-        out[i] * (out[i] - 1) === 0;
-        sum += out[i] * (1 << i);
-    }
-    sum === in;
-}
+include "bits.circom";
 
 // out = 1 iff a < b. Both inputs are range-checked to n bits, which makes
 // the (n+1)-bit decomposition of a + 2^n - b sound. The KoalaBear prime is

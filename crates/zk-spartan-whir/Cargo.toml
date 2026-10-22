@@ -9,8 +9,8 @@ description = "Spartan-WHIR full-ZK backend, linked directly as a library (nativ
 [dependencies]
 zk-core = { path = "../zk-core" }
 spartan-whir.workspace = true
-p3-field = { git = "https://github.com/Client-Side-Proving/Plonky3.git", rev = "458ef546a251ab4d9d73c453d24a414334786ca0" }
-p3-koala-bear = { git = "https://github.com/Client-Side-Proving/Plonky3.git", rev = "458ef546a251ab4d9d73c453d24a414334786ca0" }
+p3-field.workspace = true
+p3-koala-bear.workspace = true
 serde.workspace = true
 bincode.workspace = true
 web-time.workspace = true
