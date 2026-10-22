@@ -12,6 +12,22 @@ Keep the facade at six operations. Mark a milestone done only when its acceptanc
 - [x] Native/wasm interop matrix with negative tests.
 - [x] `run-all` fast and full modes, logs, timing report, pinned-revision check, `cargo audit`.
 
+- [x] Predicate library, first four families (opening, comparison, range, committed comparison) across `u32 i32 u64 i64 u128 i128`: Rust, CLI and browser WASM, native/WASM interop, circuit reproducibility check in the gate.
+
+## Next predicate families (in order; reuse the shared gadgets in `circuits/lib`)
+
+- [ ] Arithmetic relations and conservation constraints.
+- [ ] Merkle/set membership and non-membership.
+- [ ] Private proximity and distance.
+- [ ] Composition (`all`, `any`, constrained `not`) with shared-witness binding.
+- [ ] Credentials: knowledge, issuer-backed attributes (never confused with password knowledge), expiry, revocation.
+- [ ] Private state transitions with application-defined deterministic rules.
+
+## Performance research (separate from correctness)
+
+- [ ] Profile proof-of-work grinding and the commitment gadget; evaluate upstream-supported parameter schedules (each with its own soundness review), multi-worker grinding, other transparent backends. Target 500 ms, ceiling 1000 ms; currently missed (see PROGRESS).
+- [ ] Independent recomputation of end-to-end soundness for the configured parameters.
+
 ## Open
 
 - [ ] Run `run-all-linux.sh full` on Linux and add Linux-produced interop (currently NOT VALIDATED).
@@ -19,5 +35,4 @@ Keep the facade at six operations. Mark a milestone done only when its acceptanc
 - [ ] Sweep the security range on the other circuits and add reference-witness differential tests for them.
 - [ ] Multi-threaded browser proving (needs `SharedArrayBuffer` and cross-origin isolation); today it is single-threaded.
 - [ ] Replace `bincode` 1.x when upstream moves, then drop the audit ignores.
-- [ ] Committed private-state circuits (commitment/hash, transitions); `range7` is a syntactic example only.
 - [ ] Spark matrix-closing mode (only DirectSparse is wired up).

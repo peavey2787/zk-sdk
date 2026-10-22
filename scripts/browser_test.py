@@ -1,5 +1,5 @@
 """Real-browser test: serve web/ and read a page's #result (default selftest.html; perftest.html for
-timings) from headless Edge or Chrome over CDP."""
+timings; optional second argument: timeout in seconds) from headless Edge or Chrome over CDP."""
 import functools
 import http.server
 import shutil
@@ -29,7 +29,7 @@ def find_browser():
     return None
 
 
-def main(page: str) -> int:
+def main(page: str, timeout: str) -> int:
     browser = find_browser()
     if browser is None:
         print("NOT VALIDATED: no Chrome/Edge/Chromium found for the browser test")
@@ -44,7 +44,7 @@ def main(page: str) -> int:
                                 f"--remote-debugging-port={port}", "about:blank"],
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
-        done = subprocess.run(["node", str(ROOT / "scripts" / "cdp_result.cjs"), str(port), url, "600"])
+        done = subprocess.run(["node", str(ROOT / "scripts" / "cdp_result.cjs"), str(port), url, timeout])
     finally:
         process.kill()
         server.shutdown()
@@ -52,4 +52,4 @@ def main(page: str) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1] if len(sys.argv) > 1 else "selftest.html"))
+    sys.exit(main(sys.argv[1] if len(sys.argv) > 1 else "selftest.html", sys.argv[2] if len(sys.argv) > 2 else "600"))

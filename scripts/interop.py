@@ -45,6 +45,26 @@ class Backend:
             run(["node", TOOL, NODE_PKG, "verify", vk, expected, proof], expect_ok=ok)
 
 
+    def commit(self, ty, value, commitment, secret):
+        if self.name == "native":
+            run([CLI, "predicate", "commit", "--type", ty, "--value", value, "--commitment", commitment, "--secret", secret])
+        else:
+            run(["node", TOOL, NODE_PKG, "predicate-commit", ty, value, commitment, secret])
+
+    def predicate_prove(self, claim, proof, secrets):
+        if self.name == "native":
+            flags = ["--secret", secrets[0]] + (["--secret2", secrets[1]] if len(secrets) > 1 else [])
+            run([CLI, "predicate", "prove", "--claim", claim, *flags, "--proof", proof])
+        else:
+            run(["node", TOOL, NODE_PKG, "predicate-prove", claim, proof, *secrets])
+
+    def predicate_verify(self, claim, proof, ok=True):
+        if self.name == "native":
+            run([CLI, "predicate", "verify", "--claim", claim, "--proof", proof], expect_ok=ok)
+        else:
+            run(["node", TOOL, NODE_PKG, "predicate-verify", claim, proof], expect_ok=ok)
+
+
 def build():
     steps = [
         ["cargo", "build", "--release", "-p", "zk-cli"],
@@ -59,6 +79,46 @@ def corrupt(source, target):
     data = bytearray(Path(source).read_bytes())
     data[len(data) // 2] ^= 0x55
     Path(target).write_bytes(data)
+
+
+def predicate_claims(c):
+    """name -> (claim json, altered claim json, commitment names to open). Each altered claim is a
+    different, even if true, statement: a proof must never verify against it."""
+    ge = lambda bound: f'{{"kind":"compare","commitment":"{c["age"]}","op":"ge","bound":"{bound}"}}'
+    rng = lambda lo: f'{{"kind":"range","commitment":"{c["wide"]}","lo":"{lo}","hi":"5","lo_inclusive":true,"hi_inclusive":false}}'
+    pair = lambda op: f'{{"kind":"compare_committed","left":"{c["low"]}","right":"{c["high"]}","op":"{op}"}}'
+    opens = lambda name: f'{{"kind":"opens","commitment":"{c[name]}"}}'
+    return {
+        "opens": (opens("age"), opens("low"), ["age"]),
+        "ge_u32": (ge(18), ge(19), ["age"]),
+        "range_i128": (rng(-9), rng(-8), ["wide"]),
+        "pair_i64": (pair("lt"), pair("gt"), ["low", "high"]),
+    }
+
+
+def predicate_matrix(backends, tmp):
+    makers = itertools.cycle(backends.values())
+    specs = {"age": ("u32", "20"), "wide": ("i128", "-7"), "low": ("i64", "-3"), "high": ("i64", "9")}
+    commitments, secrets = {}, {}
+    for name, (ty, value) in specs.items():
+        maker = next(makers)
+        commitment, secret = tmp / f"{name}.c", tmp / f"{name}.s"
+        maker.commit(ty, value, commitment, secret)
+        commitments[name], secrets[name] = commitment.read_text(), secret
+    for name, (claim_json, altered_json, openings) in predicate_claims(commitments).items():
+        claim, altered = tmp / f"{name}.claim.json", tmp / f"{name}.altered.json"
+        claim.write_text(claim_json)
+        altered.write_text(altered_json)
+        for producer in backends.values():
+            proof = tmp / f"{name}-{producer.name}.proof"
+            producer.predicate_prove(claim, proof, [secrets[o] for o in openings])
+            bad = tmp / f"{name}-{producer.name}.bad"
+            corrupt(proof, bad)
+            for verifier in backends.values():
+                verifier.predicate_verify(claim, proof)
+                verifier.predicate_verify(altered, proof, ok=False)
+                verifier.predicate_verify(claim, bad, ok=False)
+            print(f"PASS: predicate {name} produced by {producer.name}, verified by both (+negatives)")
 
 
 def main():
@@ -80,6 +140,7 @@ def main():
             corrupt(proof, bad)
             verifier.verify(vk, statement, bad, ok=False)
             print(f"PASS: {circuit} produced by {producer.name}, verified by {verifier.name} (+negatives)")
+    predicate_matrix(backends, tmp)
     print("PASS: interop matrix (windows host; linux NOT VALIDATED here)")
 
 

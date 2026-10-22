@@ -1,0 +1,5 @@
+* text=auto eol=lf
+*.r1cs binary
+*.wtns binary
+*.wasm binary
+*.zkp binary

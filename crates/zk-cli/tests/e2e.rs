@@ -174,3 +174,149 @@ fn arithmetic_and_millionaires_prove_and_verify() {
         "dishonest verdict"
     );
 }
+
+/// Built-in predicates through the real binary; each command is its own process, so verification
+/// never shares memory with the prover.
+mod predicates {
+    use super::*;
+
+    fn run(args: &[&str]) -> Output {
+        zk(&[&["predicate"], args].concat())
+    }
+
+    fn ok(args: &[&str]) {
+        let out = run(args);
+        assert!(
+            out.status.success(),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    fn commit(dir: &Path, name: &str, ty: &str, value: &str) -> (String, PathBuf) {
+        let (commitment, secret) = (dir.join(format!("{name}.c")), dir.join(format!("{name}.s")));
+        ok(&[
+            "commit",
+            "--type",
+            ty,
+            "--value",
+            value,
+            "--commitment",
+            path(&commitment),
+            "--secret",
+            path(&secret),
+        ]);
+        (fs::read_to_string(commitment).unwrap(), secret)
+    }
+
+    fn claim(dir: &Path, name: &str, json: &str) -> PathBuf {
+        let file = dir.join(format!("{name}.json"));
+        fs::write(&file, json).unwrap();
+        file
+    }
+
+    #[test]
+    fn every_family_proves_and_verifies_in_separate_processes() {
+        let dir = tempfile::tempdir().unwrap();
+        let (age, age_secret) = commit(dir.path(), "age", "u32", "20");
+        let (low, low_secret) = commit(dir.path(), "low", "i64", "-3");
+        let (high, high_secret) = commit(dir.path(), "high", "i64", "9");
+        let opens = |c: &str| format!(r#"{{"kind":"opens","commitment":"{c}"}}"#);
+        let ge = |bound: u32| {
+            format!(r#"{{"kind":"compare","commitment":"{age}","op":"ge","bound":"{bound}"}}"#)
+        };
+        let range = |hi: u32| {
+            format!(
+                r#"{{"kind":"range","commitment":"{age}","lo":"18","hi":"{hi}","lo_inclusive":true,"hi_inclusive":false}}"#
+            )
+        };
+        let pair = |op: &str| {
+            format!(r#"{{"kind":"compare_committed","left":"{low}","right":"{high}","op":"{op}"}}"#)
+        };
+        let cases = [
+            ("opens", opens(&age), opens(&low), vec![&age_secret]),
+            ("ge", ge(18), ge(19), vec![&age_secret]),
+            ("range", range(21), range(22), vec![&age_secret]),
+            (
+                "pair",
+                pair("lt"),
+                pair("gt"),
+                vec![&low_secret, &high_secret],
+            ),
+        ];
+        for (name, json, altered, secrets) in cases {
+            let (claim_file, proof) = (
+                claim(dir.path(), name, &json),
+                dir.path().join(format!("{name}.proof")),
+            );
+            let mut prove = vec![
+                "prove",
+                "--claim",
+                path(&claim_file),
+                "--secret",
+                path(secrets[0]),
+                "--proof",
+                path(&proof),
+            ];
+            if let Some(second) = secrets.get(1) {
+                prove.extend(["--secret2", path(second)]);
+            }
+            ok(&prove);
+            ok(&[
+                "verify",
+                "--claim",
+                path(&claim_file),
+                "--proof",
+                path(&proof),
+            ]);
+            let altered = claim(dir.path(), "altered", &altered);
+            assert!(
+                !run(&["verify", "--claim", path(&altered), "--proof", path(&proof)])
+                    .status
+                    .success(),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn false_claims_and_bad_inputs_fail_closed() {
+        let dir = tempfile::tempdir().unwrap();
+        let (age, secret) = commit(dir.path(), "age", "u32", "17");
+        let proof = dir.path().join("p");
+        let false_claim = claim(
+            dir.path(),
+            "f",
+            &format!(r#"{{"kind":"compare","commitment":"{age}","op":"ge","bound":"18"}}"#),
+        );
+        assert!(!run(&[
+            "prove",
+            "--claim",
+            path(&false_claim),
+            "--secret",
+            path(&secret),
+            "--proof",
+            path(&proof)
+        ])
+        .status
+        .success());
+        assert!(!proof.exists(), "no proof file for a false claim");
+        let garbage = claim(dir.path(), "g", "{\"kind\":\"teleport\"}");
+        assert!(!run(&["describe", "--claim", path(&garbage)])
+            .status
+            .success());
+        assert!(!run(&[
+            "commit",
+            "--type",
+            "u32",
+            "--value",
+            "-1",
+            "--commitment",
+            path(&dir.path().join("c")),
+            "--secret",
+            path(&dir.path().join("s"))
+        ])
+        .status
+        .success());
+    }
+}

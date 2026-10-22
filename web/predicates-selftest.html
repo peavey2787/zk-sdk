@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>zk-sdk predicate browser self-test</title></head>
+<body>
+<pre id="result">RUNNING</pre>
+<script type="module">
+// Real full-ZK predicate proofs generated AND verified inside the browser worker (no native
+// fixture), driven by scripts/browser_test.py predicates-selftest.html.
+import { buildClaim } from "./claims.js";
+import { JobRunner } from "./job-runner.js";
+
+const runner = new JobRunner("./worker.js");
+const commit = async (type, value) => JSON.parse((await runner.run("predicateCommit", { type, value })).result);
+const accepts = (claim, proof) => runner.run("predicateVerify", { claim: JSON.stringify(claim), proof }).then(() => true, () => false);
+const proves = (claim, secrets) => runner.run("predicateProve", { claim: JSON.stringify(claim), secrets }).then((r) => r.result, () => null);
+
+async function main() {
+  const checks = {};
+  const age = await commit("u32", "20");
+  const wide = await commit("i128", "-7");
+  const low = await commit("i64", "-3");
+  const high = await commit("i64", "9");
+
+  const open = buildClaim("opens", {}, [age.commitment]);
+  const openProof = await proves(open, [age.secret]);
+  checks.opens_accepted = openProof !== null && (await accepts(open, openProof));
+  checks.opens_rejects_other_commitment = !(await accepts(buildClaim("opens", {}, [low.commitment]), openProof));
+
+  const ge = buildClaim("compare", { op: "ge", bound: "18" }, [age.commitment]);
+  const geProof = await proves(ge, [age.secret]);
+  checks.compare_accepted = geProof !== null && (await accepts(ge, geProof));
+  checks.compare_rejects_changed_bound = !(await accepts(buildClaim("compare", { op: "ge", bound: "19" }, [age.commitment]), geProof));
+  checks.compare_false_claim_unprovable = (await proves(buildClaim("compare", { op: "ge", bound: "21" }, [age.commitment]), [age.secret])) === null;
+
+  const range = buildClaim("range", { lo: "-9", hi: "-7", loInclusive: true, hiInclusive: true }, [wide.commitment]);
+  const rangeProof = await proves(range, [wide.secret]);
+  checks.range_signed_128_accepted = rangeProof !== null && (await accepts(range, rangeProof));
+  checks.range_exclusive_end_unprovable = (await proves(buildClaim("range", { lo: "-9", hi: "-7", loInclusive: true, hiInclusive: false }, [wide.commitment]), [wide.secret])) === null;
+
+  const pair = buildClaim("compare_committed", { op: "lt" }, [low.commitment, high.commitment]);
+  const pairProof = await proves(pair, [low.secret, high.secret]);
+  checks.committed_pair_accepted = pairProof !== null && (await accepts(pair, pairProof));
+  checks.committed_pair_rejects_swapped = !(await accepts(buildClaim("compare_committed", { op: "lt" }, [high.commitment, low.commitment]), pairProof));
+
+  const bad = geProof.slice();
+  bad[bad.length >> 1] ^= 0x55;
+  checks.rejects_corrupted_proof = !(await accepts(ge, bad));
+  checks.rejects_truncated_proof = !(await accepts(ge, geProof.slice(0, 100)));
+
+  const first = runner.run("capabilities");
+  checks.overlapping_job_refused = await runner.run("capabilities").then(() => false, (e) => /still running/.test(e.message));
+  await first;
+  const slow = runner.run("predicateProve", { claim: JSON.stringify(ge), secrets: [age.secret] });
+  const cancelled = slow.then(() => false, (e) => e.message === "cancelled");
+  checks.cancel_works = runner.cancel() && (await cancelled);
+  checks.usable_after_cancel = (await accepts(ge, geProof));
+
+  const failed = Object.keys(checks).filter((name) => !checks[name]);
+  return failed.length ? `FAIL ${failed.join(",")}` : `PASS browser predicate self-test (${Object.keys(checks).length} checks)`;
+}
+
+main().then((r) => (document.getElementById("result").textContent = r))
+  .catch((e) => (document.getElementById("result").textContent = `FAIL ${e}`));
+</script>
+</body>
+</html>

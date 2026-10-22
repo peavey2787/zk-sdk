@@ -1,6 +1,7 @@
 //! Thin wasm-bindgen layer over `zk_sdk::portable`. Every byte stays in the browser: there is no
 //! network access here, and the heavy calls are meant to run inside a Web Worker.
 use wasm_bindgen::prelude::*;
+use zk_sdk::predicate::{self, Predicates};
 use zk_sdk::{portable, SecurityPolicy, Zk};
 
 fn js(error: impl std::fmt::Display) -> JsError {
@@ -81,4 +82,37 @@ pub fn verify(verifying_key: &[u8], expected: &[u32], proof: &[u8]) -> Result<()
 #[wasm_bindgen]
 pub fn describe(proof: &[u8]) -> Result<String, JsError> {
     Ok(format!("{:?}", portable::describe(proof).map_err(js)?))
+}
+
+thread_local! {
+    // Built-in predicate circuits are loaded and keyed on first use, then kept warm for the
+    // lifetime of the worker.
+    static PREDICATES: Predicates = Predicates::new();
+}
+
+/// A fresh commitment as JSON `{"commitment","secret"}`: publish the first, keep the second.
+#[wasm_bindgen]
+pub fn predicate_commit(int_type: &str, value: &str) -> Result<String, JsError> {
+    Ok(predicate::commit(int_type, value).map_err(js)?.to_json())
+}
+
+/// Prove a JSON claim with one secret per commitment, in claim order.
+#[wasm_bindgen]
+pub fn predicate_prove(claim_json: &str, secrets: Vec<String>) -> Result<Vec<u8>, JsError> {
+    PREDICATES
+        .with(|zk| predicate::prove(zk, claim_json, &secrets))
+        .map_err(js)
+}
+
+/// Verify against the claim the caller trusts; nothing is read from the proof.
+#[wasm_bindgen]
+pub fn predicate_verify(claim_json: &str, proof: &[u8]) -> Result<(), JsError> {
+    PREDICATES
+        .with(|zk| predicate::verify(zk, claim_json, proof))
+        .map_err(js)
+}
+
+#[wasm_bindgen]
+pub fn predicate_describe(claim_json: &str) -> Result<String, JsError> {
+    predicate::describe(claim_json).map_err(js)
 }

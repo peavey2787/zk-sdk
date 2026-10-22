@@ -1,25 +1,10 @@
 import { circuits } from "./circuits.js";
+import { JobRunner } from "./job-runner.js";
 
 const $ = (id) => document.getElementById(id);
-const worker = new Worker("./worker.js", { type: "module" });
-const pending = new Map();
-let nextId = 0;
+const runner = new JobRunner("./worker.js");
 const state = { r1cs: null, sym: null, keys: null, proof: null, circuit: null };
-
-worker.onmessage = ({ data }) => {
-  const settle = pending.get(data.id);
-  pending.delete(data.id);
-  if (data.ok) settle.resolve(data);
-  else settle.reject(new Error(data.error));
-};
-
-function call(op, args = {}) {
-  return new Promise((resolve, reject) => {
-    const id = nextId++;
-    pending.set(id, { resolve, reject });
-    worker.postMessage({ id, op, args });
-  });
-}
+const call = (op, args) => runner.run(op, args);
 
 function log(message, kind = "") {
   const line = document.createElement("div");

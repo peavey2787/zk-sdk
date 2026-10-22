@@ -1,6 +1,8 @@
 //! `zk`: file-based adapter over the SDK facade. Contains no cryptography of its own.
 mod args;
 mod commands;
+mod io;
+mod predicate;
 
 use std::process::ExitCode;
 

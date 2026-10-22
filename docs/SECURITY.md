@@ -31,6 +31,10 @@ Artifacts and circuits have hard size caps and strict decoding. Proving cost gro
 
 `cargo audit` reports two unmaintained-crate notices, ignored by ID: RUSTSEC-2025-0141 (`bincode` 1.x, whose fixed-int little-endian encoding is this project's artifact format and the upstream's key encoding) and RUSTSEC-2024-0436 (`paste`, a proc macro pulled in transitively). Neither is a vulnerability advisory.
 
+## Predicates
+
+See `docs/PREDICATES.md` for the commitment, integer encoding and circuit-identity model. Verification derives public inputs from the caller's claim. Bundled circuits are SHA-256-checked and reproducibly rebuilt (`scripts/build_circuits.py --check`). The end-to-end soundness of the configured 116-bit target is **not independently recomputed**; do not quote a post-quantum bit-security figure for it.
+
 ## Not covered
 
 Side channels, fault attacks, supply-chain review of upstream beyond pinning, and the soundness of the circuits you add.

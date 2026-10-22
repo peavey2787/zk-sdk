@@ -1,5 +1,5 @@
 // Runs all cryptography off the main thread. Everything here is local to the browser:
-// the private inputs, witness and proving key are never sent over the network.
+// the private inputs, witness, secrets and proving key are never sent over the network.
 import init, * as zk from "./pkg/zk_wasm.js";
 
 const ready = init();
@@ -17,14 +17,23 @@ const operations = {
     return true;
   },
   describe: ({ proof }) => zk.describe(proof),
+  // Built-in predicates: no circuit, key or setup handling on the page.
+  predicateCommit: ({ type, value }) => zk.predicate_commit(type, value),
+  predicateProve: ({ claim, secrets }) => zk.predicate_prove(claim, secrets),
+  predicateVerify: ({ claim, proof }) => {
+    zk.predicate_verify(claim, proof);
+    return true;
+  },
+  predicateDescribe: ({ claim }) => zk.predicate_describe(claim),
 };
 
 self.onmessage = async ({ data: { id, op, args } }) => {
   try {
-    await ready;
+    const exports = await ready;
     const start = performance.now();
     const result = operations[op](args);
-    self.postMessage({ id, ok: true, result, ms: Math.round(performance.now() - start) });
+    const ms = Math.round(performance.now() - start);
+    self.postMessage({ id, ok: true, result, ms, wasmBytes: exports.memory.buffer.byteLength });
   } catch (error) {
     self.postMessage({ id, ok: false, error: String(error?.message ?? error) });
   }

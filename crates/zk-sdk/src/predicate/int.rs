@@ -86,6 +86,30 @@ impl std::fmt::Display for IntType {
     }
 }
 
+impl std::str::FromStr for IntType {
+    type Err = ZkError;
+
+    fn from_str(name: &str) -> Result<Self> {
+        let invalid = || {
+            ZkError::Predicate(format!(
+                "unknown integer type `{name}` (u32 i32 u64 i64 u128 i128)"
+            ))
+        };
+        let (signed, digits) = match name.split_at_checked(1).ok_or_else(invalid)? {
+            ("u", digits) => (false, digits),
+            ("i", digits) => (true, digits),
+            _ => return Err(invalid()),
+        };
+        let width = match digits {
+            "32" => Width::W32,
+            "64" => Width::W64,
+            "128" => Width::W128,
+            _ => return Err(invalid()),
+        };
+        Ok(Self::new(width, signed))
+    }
+}
+
 /// A mathematical integer in `[-2^127, 2^128)`, convertible from every primitive integer type.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Number {

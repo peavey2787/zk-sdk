@@ -1,12 +1,7 @@
-use std::time::Instant;
-
-use zk_sdk::{
-    decode_artifact,
-    files::{read_bounded, write_atomic},
-    portable, PrivateInputs, ProvingKey, SecurityPolicy, Zk,
-};
+use zk_sdk::{decode_artifact, portable, PrivateInputs, ProvingKey, SecurityPolicy, Zk};
 
 use crate::args::Flags;
+use crate::io::{read, read_text, sdk, timed, write};
 
 const USAGE: &str = "usage:
   zk info
@@ -14,20 +9,12 @@ const USAGE: &str = "usage:
   zk prove   --pk F --r1cs F --sym F --input F.json --proof F
   zk verify  --vk F --expected N,N,... --proof F
   zk inspect --proof F
-  zk bench   --pk F --r1cs F --sym F --input F.json [--runs N]   (p50/p95/p99 per run)";
+  zk bench   --pk F --r1cs F --sym F --input F.json [--runs N]   (p50/p95/p99 per run)
+built-in predicates (no circuit or setup needed):
+{PREDICATE}";
 
-/// Largest circuit, key, witness or proof file this tool will load.
-const MAX_FILE_BYTES: u64 = 4 * 1024 * 1024 * 1024;
-
-fn sdk(error: impl std::fmt::Display) -> String {
-    error.to_string()
-}
-
-fn timed<T>(label: &str, work: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
-    let start = Instant::now();
-    let value = work()?;
-    println!("timing {label}_ms={}", start.elapsed().as_millis());
-    Ok(value)
+fn usage() -> String {
+    USAGE.replace("{PREDICATE}", crate::predicate::USAGE)
 }
 
 fn parse_policy(flags: &Flags) -> Result<SecurityPolicy, String> {
@@ -45,18 +32,6 @@ fn parse_signals(list: &str) -> Result<Vec<u64>, String> {
     list.split(',')
         .map(|n| n.trim().parse().map_err(|_| format!("bad signal `{n}`")))
         .collect()
-}
-
-fn read(flags: &Flags, name: &str) -> Result<Vec<u8>, String> {
-    read_bounded(flags.required(name)?, MAX_FILE_BYTES).map_err(sdk)
-}
-
-fn read_text(flags: &Flags, name: &str) -> Result<String, String> {
-    String::from_utf8(read(flags, name)?).map_err(|_| format!("--{name} file is not UTF-8"))
-}
-
-fn write(flags: &Flags, name: &str, bytes: &[u8]) -> Result<(), String> {
-    write_atomic(flags.required(name)?, bytes).map_err(sdk)
 }
 
 fn info() -> Result<(), String> {
@@ -166,7 +141,7 @@ fn inspect(flags: &Flags) -> Result<(), String> {
 
 pub fn run(args: &[String]) -> Result<(), String> {
     let Some((command, rest)) = args.split_first() else {
-        return Err(USAGE.into());
+        return Err(usage());
     };
     let flags = |allowed: &[&str]| Flags::parse(rest, allowed);
     match command.as_str() {
@@ -176,7 +151,8 @@ pub fn run(args: &[String]) -> Result<(), String> {
         "verify" => verify(&flags(&["vk", "expected", "proof"])?),
         "bench" => bench(&flags(&["pk", "r1cs", "sym", "input", "runs"])?),
         "inspect" => inspect(&flags(&["proof"])?),
-        _ => Err(USAGE.into()),
+        "predicate" => crate::predicate::run(rest),
+        _ => Err(usage()),
     }
 }
 

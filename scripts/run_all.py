@@ -31,6 +31,8 @@ FAST = [
 FULL = [
     ("wasm-build", [PY, "scripts/build_wasm.py"]),
     ("browser", [PY, "scripts/browser_test.py"]),
+    ("browser-predicates", [PY, "scripts/browser_test.py", "predicates-selftest.html"]),
+    ("circuits", [PY, "scripts/build_circuits.py", "--check"]),
     ("interop", [PY, "scripts/interop.py"]),
     ("audit", CARGO + ["audit", "--deny", "warnings"]),
 ]
@@ -38,6 +40,8 @@ PERF = [
     ("wasm-build", [PY, "scripts/build_wasm.py"]),
     ("perf-native", [PY, "scripts/perf_gate.py"]),
     ("perf-browser", [PY, "scripts/browser_test.py", "perftest.html"]),
+    ("perf-native-predicates", CARGO + ["run", "--release", "-p", "zk-sdk", "--example", "bench_predicates", "20"]),
+    ("perf-browser-predicates", [PY, "scripts/browser_test.py", "predicates-perftest.html?n=5", "3600"]),
 ]
 
 

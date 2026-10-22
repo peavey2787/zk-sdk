@@ -220,3 +220,12 @@ fn claims_travel_as_json() {
     let proof = holds(&claim, &o);
     zk().verify(&received, &proof).unwrap();
 }
+
+#[test]
+fn an_independent_verifier_accepts_a_proof_from_another_instance() {
+    let (c, o) = commit(IntType::U64, 77u64);
+    let claim = Predicate::at_least(c, 18);
+    let proof = holds(&claim, &o);
+    let fresh_verifier = Predicates::new();
+    fresh_verifier.verify(&claim, &proof).unwrap();
+}

@@ -18,6 +18,19 @@ const commands = {
   verify: ([vk, expected, proof]) => {
     zk.verify(read(vk), Uint32Array.from(expected.split(",").map(Number)), read(proof));
   },
+  // Built-in predicates, mirroring `zk predicate ...` (same files, same claim JSON).
+  "predicate-commit": ([type, value, commitment, secret]) => {
+    const made = JSON.parse(zk.predicate_commit(type, value));
+    fs.writeFileSync(commitment, made.commitment);
+    fs.writeFileSync(secret, made.secret);
+  },
+  "predicate-prove": ([claim, proof, ...secrets]) => {
+    const texts = secrets.map((path) => fs.readFileSync(path, "utf8"));
+    fs.writeFileSync(proof, zk.predicate_prove(fs.readFileSync(claim, "utf8"), texts));
+  },
+  "predicate-verify": ([claim, proof]) => {
+    zk.predicate_verify(fs.readFileSync(claim, "utf8"), read(proof));
+  },
 };
 
 try {

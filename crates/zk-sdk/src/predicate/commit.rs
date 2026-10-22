@@ -13,7 +13,7 @@ use p3_koala_bear::{default_koalabear_poseidon2_16, KoalaBear, Poseidon2KoalaBea
 use p3_symmetric::Permutation;
 use serde::{Deserialize, Serialize};
 
-use super::int::{IntType, Number, Width};
+use super::int::{IntType, Number};
 use crate::{Result, ZkError};
 
 pub(super) const FIELD_MODULUS: u32 = 0x7f00_0001;
@@ -145,7 +145,7 @@ impl Commitment {
         let invalid =
             || ZkError::Format(format!("`{text}` is not a commitment (type:64 hex digits)"));
         let (name, hex) = text.split_once(':').ok_or_else(invalid)?;
-        let ty = parse_type(name).ok_or_else(invalid)?;
+        let ty: IntType = name.parse().map_err(|_| invalid())?;
         if hex.len() != DIGEST_ELEMENTS * 8 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
             return Err(invalid());
         }
@@ -161,21 +161,6 @@ impl Commitment {
         }
         Ok(Self { ty, digest })
     }
-}
-
-fn parse_type(name: &str) -> Option<IntType> {
-    let signed = match name.as_bytes().first()? {
-        b'u' => false,
-        b'i' => true,
-        _ => return None,
-    };
-    let width = match &name[1..] {
-        "32" => Width::W32,
-        "64" => Width::W64,
-        "128" => Width::W128,
-        _ => return None,
-    };
-    Some(IntType::new(width, signed))
 }
 
 impl Serialize for Commitment {
@@ -239,8 +224,7 @@ impl Opening {
         }
         let secret: Secret =
             serde_json::from_str(text).map_err(|e| ZkError::Format(e.to_string()))?;
-        let ty = parse_type(&secret.r#type)
-            .ok_or_else(|| ZkError::Format(format!("unknown integer type `{}`", secret.r#type)))?;
+        let ty: IntType = secret.r#type.parse()?;
         let value: Number = secret.value.parse()?;
         ty.encode(value)?;
         if secret.blinding.iter().any(|b| *b >= FIELD_MODULUS) {

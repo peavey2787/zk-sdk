@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>zk-sdk predicate browser performance</title></head>
+<body>
+<pre id="result">RUNNING</pre>
+<script type="module">
+// Real-browser proving cost of every built-in predicate circuit at the default (upstream, 116-bit
+// full-ZK) policy. Driven by scripts/browser_test.py predicates-perftest.html?n=SAMPLES.
+// A quantile is reported only when the sample count supports it (p95 needs >=20, p99 needs >=100);
+// otherwise it is "n/a", never extrapolated. This never alters a security parameter.
+import { buildClaim } from "./claims.js";
+import { JobRunner } from "./job-runner.js";
+
+const SAMPLES = Number(new URLSearchParams(location.search).get("n") ?? 5);
+const TARGET_MS = 500, CEILING_MS = 1000;
+const runner = new JobRunner("./worker.js");
+const types = { 32: "u32", 64: "u64", 128: "u128" };
+
+const quantile = (sorted, q, minimum) =>
+  sorted.length < minimum ? "n/a" : sorted[Math.min(sorted.length, Math.ceil(sorted.length * q)) - 1];
+
+async function commit(type, value) {
+  return JSON.parse((await runner.run("predicateCommit", { type, value })).result);
+}
+
+async function measure(family, bits) {
+  const type = types[bits];
+  const a = await commit(type, "20");
+  const b = await commit(type, "30");
+  const claim = {
+    opens: () => buildClaim("opens", {}, [a.commitment]),
+    compare: () => buildClaim("compare", { op: "ge", bound: "18" }, [a.commitment]),
+    range: () => buildClaim("range", { lo: "10", hi: "40", loInclusive: true, hiInclusive: true }, [a.commitment]),
+    compare_committed: () => buildClaim("compare_committed", { op: "lt" }, [a.commitment, b.commitment]),
+  }[family]();
+  const secrets = family === "compare_committed" ? [a.secret, b.secret] : [a.secret];
+  const args = { claim: JSON.stringify(claim), secrets };
+
+  const first = await runner.run("predicateProve", args); // includes circuit load and key setup
+  const times = [];
+  let proof = first.result, wasmBytes = first.wasmBytes, stall = 0;
+  let last = performance.now();
+  const ticker = setInterval(() => {
+    const now = performance.now();
+    stall = Math.max(stall, now - last - 20);
+    last = now;
+  }, 20);
+  for (let i = 0; i < SAMPLES; i++) {
+    const run = await runner.run("predicateProve", args);
+    times.push(run.ms);
+    proof = run.result;
+    wasmBytes = Math.max(wasmBytes, run.wasmBytes);
+  }
+  clearInterval(ticker);
+  const verify = await runner.run("predicateVerify", { claim: args.claim, proof });
+  times.sort((x, y) => x - y);
+  return {
+    first_prove_ms: first.ms, samples: SAMPLES,
+    p50_ms: quantile(times, 0.5, 1), p95_ms: quantile(times, 0.95, 20), p99_ms: quantile(times, 0.99, 100),
+    verify_ms: verify.ms, proof_bytes: proof.length, wasm_memory_mib: Math.round(wasmBytes / 1048576),
+    max_ui_stall_ms: Math.round(stall),
+  };
+}
+
+async function main() {
+  const results = {};
+  for (const family of ["opens", "compare", "range", "compare_committed"]) {
+    for (const bits of [32, 64, 128]) results[`${family}_${bits}`] = await measure(family, bits);
+  }
+  const worst = Math.max(...Object.values(results).map((r) => r.p50_ms));
+  const verdict = worst > CEILING_MS ? `PERF MISS: worst p50 ${worst} ms exceeds the ${CEILING_MS} ms ceiling`
+    : `PASS: worst p50 ${worst} ms` + (worst > TARGET_MS ? ` (above the ${TARGET_MS} ms target)` : "");
+  return `${verdict}\n${JSON.stringify({ userAgent: navigator.userAgent, cores: navigator.hardwareConcurrency, results })}`;
+}
+
+main().then((r) => (document.getElementById("result").textContent = r))
+  .catch((e) => (document.getElementById("result").textContent = `FAIL ${e}`));
+</script>
+</body>
+</html>

@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>zk-sdk predicates in the browser</title>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; max-width: 48rem; margin: 2rem auto; padding: 0 1rem; }
+  fieldset { margin: 1rem 0; padding: 1rem; }
+  label { display: block; margin: .5rem 0; }
+  input[type=text], select { width: 16rem; }
+  textarea { width: 100%; height: 7rem; font: 12px/1.3 ui-monospace, monospace; }
+  .row { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
+  .hidden { display: none; }
+  table { border-collapse: collapse; } td { padding: .1rem 1rem .1rem 0; }
+  #log div { font: 13px/1.4 ui-monospace, monospace; padding: .15rem 0; }
+  .good { color: #0a7a2f; } .bad { color: #b00020; } .warn { color: #8a5a00; }
+  .note { color: #555; font-size: .85rem; }
+</style>
+</head>
+<body>
+<h1>zk-sdk predicates</h1>
+<p class="note">Commitments, proofs and verification run locally as WebAssembly in a Web Worker, so this page stays
+responsive during multi-second proofs. Private values never leave this tab. Backend: <span id="backend">loading...</span>
+&middot; <a href="index.html">generic circuits</a></p>
+
+<fieldset>
+  <legend>Predicate</legend>
+  <label>Family <select id="family"></select></label>
+  <label>Integer type <select id="type"></select></label>
+  <label>Private value <input id="valueA" type="text" value="20"></label>
+  <label id="rowB">Second private value <input id="valueB" type="text" value="30"></label>
+  <label id="rowOp">Operator <select id="op"></select></label>
+  <label id="rowBound">Public bound <input id="bound" type="text" value="18"></label>
+  <label id="rowLo">Range low <input id="lo" type="text" value="18"></label>
+  <label id="rowHi">Range high <input id="hi" type="text" value="65"></label>
+  <label id="rowEnds"><input id="loInclusive" type="checkbox" checked> low end inclusive
+    <input id="hiInclusive" type="checkbox" checked> high end inclusive</label>
+</fieldset>
+
+<fieldset>
+  <legend>Commit, prove, verify</legend>
+  <div class="row">
+    <button id="commit">1. Commit</button>
+    <button id="prove">2. Prove locally</button>
+    <button id="verify">3. Verify locally</button>
+    <button id="cancel" disabled>Cancel job</button>
+  </div>
+  <label>Claim the verifier trusts (JSON; edit it to watch verification reject)
+    <textarea id="claim" spellcheck="false"></textarea>
+  </label>
+  <table>
+    <tr><td>Commit</td><td id="t-commit">-</td></tr>
+    <tr><td>Prove (witness + proof, incl. first-use setup)</td><td id="t-prove">-</td></tr>
+    <tr><td>Verify</td><td id="t-verify">-</td></tr>
+    <tr><td>Proof size</td><td id="t-size">-</td></tr>
+    <tr><td>wasm memory</td><td id="t-memory">-</td></tr>
+    <tr><td>Longest UI stall while working</td><td id="t-stall">-</td></tr>
+  </table>
+</fieldset>
+
+<fieldset>
+  <legend>Export, import and invalid proofs</legend>
+  <div class="row">
+    <button id="exportProof">Export proof</button>
+    <button id="exportClaim">Export claim</button>
+    <button id="exportSecrets">Export secrets</button>
+    <button id="tamper">Corrupt the proof</button>
+  </div>
+  <label>Import proof <input id="importProof" type="file"></label>
+  <label>Import claim <input id="importClaim" type="file"></label>
+  <p class="note">Secrets are the openings of your commitments. Treat them like private keys.</p>
+</fieldset>
+
+<div id="log"></div>
+<script type="module" src="predicates.js"></script>
+</body>
+</html>

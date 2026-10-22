@@ -13,6 +13,7 @@
 //! # Ok(()) }
 //! ```
 
+mod api;
 mod approved;
 mod bundle;
 mod claim;
@@ -20,6 +21,7 @@ mod commit;
 mod engine;
 mod int;
 
+pub use api::{commit, describe, prove, verify, Committed};
 pub use claim::{Op, Predicate, Statement};
 pub use commit::{Commitment, Opening};
 pub use engine::{PredicateProof, Predicates, Witness};

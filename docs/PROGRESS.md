@@ -16,8 +16,10 @@ Measured on Windows 11, native `x86_64-pc-windows-msvc`, rustc 1.98.1; wasm in h
 | Sweep on circuits other than age_over | Not done | |
 | Predicate library: open / compare (6 ops) / range / committed-vs-committed, u32 i32 u64 i64 u128 i128 | **Validated natively** | `crates/zk-sdk/tests/predicates.rs`: real full-ZK proofs, positive, boundary, negative, malformed, adversarial |
 | Poseidon2 commitment, circuit vs host | **Validated** | host commitments are accepted by the compiled circuit in every predicate proof |
-| Predicate CLI, wasm bindings, browser demo, per-predicate browser perf | **Not done** | the shared engine (`zk_sdk::predicate`) is not yet exposed there |
-| Circuit reproducibility (`scripts/build_circuits.py --check`) | Implemented, **not in the gate** | pinned circom fork; byte-identity across Windows/Linux not yet confirmed |
+| Predicate CLI (`zk predicate ...`), wasm bindings, browser demo (Worker, cancel, no overlap) | **Validated** | `crates/zk-cli/tests/e2e.rs`, `web/predicates-selftest.html` (14 checks, real browser proofs), docs/PREDICATES.md |
+| Native <-> WASM predicate interop | **Validated (Windows host)** | `scripts/interop.py`: native- and WASM-made commitments, proofs from both verified by both, altered-claim and corrupted-proof negatives |
+| Per-predicate browser perf | **Measured** | table below; 5 samples, so p50 only |
+| Circuit reproducibility (`scripts/build_circuits.py --check`) | **In the full gate** | byte-identical rebuild on Windows; Linux result comes from CI |
 | Arithmetic, set/Merkle membership, proximity, credentials, state transitions, composition | **Not started** | |
 
 ## Performance (Ryzen 7 5800X, Windows 11, default 116-bit full ZK, upstream parameters)
@@ -36,16 +38,25 @@ Latency is gated separately from security/correctness: `run-all ... perf` (own C
 
 Unresolved: security-preserving options not yet evaluated, each requiring its own soundness review: multi-worker grinding (needs an upstream change or WASM threads with cross-origin isolation), an upstream-approved parameter schedule with matching soundness calculations, a faster Poseidon hash, or a different transparent backend. Applications must prove asynchronously (the demo already runs in a Worker). Key decode/prepare/witness import/encode total under 0.5 ms, so key caching saves nothing. The AVX2 build is optional and not benchmarked separately yet.
 
-### Predicate library (native, release, 16 threads, 20 samples, whole prove call incl. witness)
+### Predicate library (all 12 circuits, default upstream 116-bit full-ZK policy)
 
-| Circuit | setup | p50 | p95 | verify | proof |
-|---|---|---|---|---|---|
-| open_32 / 64 / 128 | 1.2-2.9 s | 1814 / 1877 / 1537 ms | 3285 / 3474 / 3624 ms | 48-64 ms | 634-725 KB |
-| compare_32 / 64 / 128 | 1.9-3.5 s | 2176 / 1406 / 1384 ms | 3706 / 3170 / 2140 ms | 42-76 ms | 632-732 KB |
-| range_32 / 64 / 128 | 0.7-3.0 s | 1698 / 1939 / 1236 ms | 4771 / 2771 / 1922 ms | 41-78 ms | 726 KB |
-| compare_committed_32 / 64 / 128 | 2.2-2.9 s | 2142 / 1822 / 1699 ms | 3138 / 4536 / 3014 ms | 46-69 ms | 722-818 KB |
+Native: Ryzen 7 5800X, 16 threads, 20 samples per circuit, whole prove call including witness (`cargo run --release -p zk-sdk --example bench_predicates`). Optimized = `-C target-cpu=x86-64-v3` (AVX2/BMI2, opt-in). Browser: headless Edge 155 on the same machine, 5 samples per circuit (`scripts/browser_test.py predicates-perftest.html?n=5`), so **p95/p99 are not supported by the sample count and are not reported**; native p99 needs >=100 samples and is not reported either.
 
-**No predicate meets the 1000 ms target natively**: the commitment opening (Poseidon2 inside the circuit) makes every circuit larger than age_over, and the same grinding tail applies. p99 needs >=100 samples and is not reported. Browser numbers for predicates are not measured yet. Reproduce with `cargo run --release -p zk-sdk --example bench_predicates`.
+| Circuit | constraints | proof | native portable p50 / p95 | native optimized p50 / p95 | browser WASM p50 | verify native / browser |
+|---|---|---|---|---|---|---|
+| open_32 / 64 / 128 | 1867 / 1901 / 2885 | 633-726 KB | 1059 / 1134 / 1308 ms; 2758 / 2017 / 2834 | 161 / 178 / 238 ms; 250 / 293 / 312 | 10.8 / 6.8 / 18.3 s | 23-42 / 43-53 ms |
+| compare_32 / 64 / 128 | 1989 / 2137 / 3349 | 631-728 KB | 1315 / 1558 / 1461 ms; 2251 / 2486 / 2565 | 222 / 183 / 232 ms; 348 / 309 / 295 | 12.9 / 19.6 / 14.8 s | 23-43 / 49-59 ms |
+| range_32 / 64 / 128 | 2103 / 2365 / 3805 | 725-730 KB | 1225 / 1348 / 1423 ms; 1690 / 2134 / 2045 | 219 / 226 / 224 ms; 338 / 285 / 311 | 10.5 / 14.1 / 9.7 s | 25-50 / 48-53 ms |
+| compare_committed_32 / 64 / 128 | 3821 / 3969 / 6097 | 726-824 KB | 1273 / 1550 / 1767 ms; 1917 / 2674 / 2982 | 231 / 255 / 347 ms; 327 / 308 / 516 | 11.0 / 12.4 / 11.9 s | 27-58 / 53-75 ms |
+
+Browser extras: wasm linear memory 16-63 MiB (cumulative over the run, one worker), longest main-thread stall while proving 1-18 ms (the page stays responsive), first prove per circuit (circuit load + key setup + prove) 7.6-32 s. Browser numbers are noisy (5 samples; the machine was not otherwise idle).
+
+**Target status (500 ms target, 1000 ms ceiling, p50):**
+- Native optimized (AVX2): **met** for every circuit (161-347 ms); p95 up to 516 ms.
+- Native portable: **missed** (1.06-1.77 s p50; p95 1.7-3.0 s).
+- Browser WASM: **missed** by 7-20x (6.8-19.6 s). Dominated by single-threaded proof-of-work grinding and unvectorised field arithmetic; the application must prove asynchronously (the demo does, in a Worker).
+
+The optimized build is opt-in and refuses to start on CPUs without AVX2/BMI2. Nothing above lowers any security parameter. Investigation of the browser path (WASM threads for grinding, upstream-approved schedules, other transparent backends) is open and tracked in ROADMAP; each option needs its own soundness review.
 
 **End-to-end soundness of the configured 116-bit target is still not independently recomputed.** Nothing here claims 116-bit post-quantum security.
 
