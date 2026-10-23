@@ -114,5 +114,7 @@ pub fn predicate_verify(claim_json: &str, proof: &[u8]) -> Result<(), JsError> {
 
 #[wasm_bindgen]
 pub fn predicate_describe(claim_json: &str) -> Result<String, JsError> {
-    predicate::describe(claim_json).map_err(js)
+    PREDICATES
+        .with(|zk| predicate::describe(zk, claim_json))
+        .map_err(js)
 }

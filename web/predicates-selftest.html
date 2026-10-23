@@ -42,6 +42,30 @@ async function main() {
   checks.committed_pair_accepted = pairProof !== null && (await accepts(pair, pairProof));
   checks.committed_pair_rejects_swapped = !(await accepts(buildClaim("compare_committed", { op: "lt" }, [high.commitment, low.commitment]), pairProof));
 
+  // Arithmetic and conservation: exact integers, public and private operands, real proofs.
+  const [in1, in2, out1, out2] = [await commit("u64", "700"), await commit("u64", "300"), await commit("u64", "960"), await commit("u64", "30")];
+  const conserve = (fee, order = [out1, out2]) => buildClaim("conserve", { inputs: "a, b", outputs: "c, d", fee }, [in1, in2, ...order].map((c) => c.commitment));
+  const conserveProof = await proves(conserve("10"), [in1, in2, out1, out2].map((c) => c.secret));
+  checks.conserve_accepted = conserveProof !== null && (await accepts(conserve("10"), conserveProof));
+  checks.conserve_rejects_other_fee = !(await accepts(conserve("11"), conserveProof));
+  checks.conserve_rejects_swapped_outputs = !(await accepts(conserve("10", [out2, out1]), conserveProof));
+  checks.conserve_unbalanced_unprovable = (await proves(conserve("9"), [in1, in2, out1, out2].map((c) => c.secret))) === null;
+
+  const number = await commit("u32", "300");
+  const total = await commit("u32", "900");
+  const product = buildClaim("arithmetic", { op: "eq", operands: [{ mode: "private", value: "" }, { mode: "public", value: "3" }, { mode: "public", value: "0" }, { mode: "private", value: "" }] }, [number.commitment, total.commitment]);
+  const productProof = await proves(product, [number.secret, total.secret]);
+  checks.product_mixed_operands_accepted = productProof !== null && (await accepts(product, productProof));
+  checks.product_wrong_secret_unprovable = (await proves(product, [total.secret, number.secret])) === null;
+
+  const dividend = await commit("u32", "47");
+  const quotient = await commit("u32", "5");
+  const remainder = await commit("u32", "2");
+  const division = buildClaim("divide", { operands: [{ mode: "private", value: "" }, { mode: "public", value: "9" }, { mode: "private", value: "" }, { mode: "private", value: "" }] }, [dividend.commitment, quotient.commitment, remainder.commitment]);
+  const divisionProof = await proves(division, [dividend.secret, quotient.secret, remainder.secret]);
+  checks.division_accepted = divisionProof !== null && (await accepts(division, divisionProof));
+  checks.division_rejects_other_divisor = !(await accepts(buildClaim("divide", { operands: [{ mode: "private", value: "" }, { mode: "public", value: "8" }, { mode: "private", value: "" }, { mode: "private", value: "" }] }, [dividend.commitment, quotient.commitment, remainder.commitment]), divisionProof));
+
   const bad = geProof.slice();
   bad[bad.length >> 1] ^= 0x55;
   checks.rejects_corrupted_proof = !(await accepts(ge, bad));

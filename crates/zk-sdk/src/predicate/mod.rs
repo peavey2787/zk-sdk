@@ -15,14 +15,22 @@
 
 mod api;
 mod approved;
+mod arithmetic;
 mod bundle;
 mod claim;
 mod commit;
+#[cfg(test)]
+mod differential;
 mod engine;
+mod exact;
 mod int;
+mod semantics;
+mod statement;
 
 pub use api::{commit, describe, prove, verify, Committed};
-pub use claim::{Op, Predicate, Statement};
+pub use arithmetic::MAX_TERMS;
+pub use claim::{Op, Operand, Predicate};
 pub use commit::{Commitment, Opening};
 pub use engine::{PredicateProof, Predicates, Witness};
 pub use int::{IntType, Number, Width};
+pub use statement::Statement;

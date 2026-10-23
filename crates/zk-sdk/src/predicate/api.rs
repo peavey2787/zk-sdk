@@ -34,15 +34,19 @@ pub fn commit(ty: &str, value: &str) -> Result<Committed> {
 }
 
 fn witness(secrets: &[String]) -> Result<Witness> {
-    let mut openings = secrets.iter().map(|s| Opening::from_secret_json(s));
-    match (openings.next(), openings.next(), openings.next()) {
-        (Some(one), None, None) => Ok(one?.into()),
-        (Some(left), Some(right), None) => Ok((left?, right?).into()),
-        _ => Err(ZkError::Predicate("provide one or two secrets".into())),
+    if secrets.is_empty() {
+        return Err(ZkError::Predicate(
+            "provide one secret per committed value".into(),
+        ));
     }
+    let openings: Result<Vec<Opening>> = secrets
+        .iter()
+        .map(|s| Opening::from_secret_json(s))
+        .collect();
+    Ok(openings?.into())
 }
 
-/// Prove the JSON claim with the given secrets (one per commitment, in claim order).
+/// Prove the JSON claim with the given secrets (one per committed value, in claim order).
 pub fn prove(zk: &Predicates, claim_json: &str, secrets: &[String]) -> Result<Vec<u8>> {
     let claim = Predicate::from_json(claim_json)?;
     Ok(zk.prove(&claim, witness(secrets)?)?.as_bytes().to_vec())
@@ -55,12 +59,14 @@ pub fn verify(zk: &Predicates, claim_json: &str, proof: &[u8]) -> Result<()> {
     )
 }
 
-/// Circuit name and public inputs of a claim, for display and interoperability checks.
-pub fn describe(claim_json: &str) -> Result<String> {
+/// Circuit name, attained security level and public inputs of a claim, for display and
+/// interoperability checks.
+pub fn describe(zk: &Predicates, claim_json: &str) -> Result<String> {
     let statement = Predicate::from_json(claim_json)?.statement()?;
     Ok(format!(
-        "{} {:?}",
+        "{} {}-bit {:?}",
         statement.circuit(),
+        zk.security_bits(statement.circuit())?,
         statement.public_inputs()
     ))
 }
@@ -79,7 +85,9 @@ mod tests {
         );
         let proof = prove(&zk, &claim, std::slice::from_ref(&made.secret)).unwrap();
         verify(&zk, &claim, &proof).unwrap();
-        assert!(describe(&claim).unwrap().starts_with("compare_64"));
+        assert!(describe(&zk, &claim)
+            .unwrap()
+            .starts_with("compare_64 116-bit"));
         assert!(verify(&zk, &claim.replace("\"lt\"", "\"gt\""), &proof).is_err());
         assert!(prove(&zk, &claim, &[]).is_err());
         assert!(prove(&zk, &claim, &vec![made.secret.clone(); 3]).is_err());

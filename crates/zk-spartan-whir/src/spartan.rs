@@ -2,8 +2,9 @@ use p3_field::PrimeField64;
 use p3_koala_bear::KoalaBear;
 use serde::{Deserialize, Serialize};
 use spartan_whir::{
-    engine::F, import_r1cs_bytes, import_witness_bytes, CircomR1cs, PoseidonZkProof,
-    PoseidonZkProvingKey, PoseidonZkVerifyingKey, QuinticExtension, SpartanWhirError,
+    engine::F, import_r1cs_bytes, import_witness_bytes, CircomR1cs, InvalidConfigReason,
+    PoseidonZkProof, PoseidonZkProvingKey, PoseidonZkVerifyingKey, QuinticExtension,
+    SpartanWhirError,
 };
 use web_time::Instant;
 use zk_core::{
@@ -58,7 +59,17 @@ fn backend_error(error: impl std::fmt::Display) -> ZkError {
 }
 
 fn upstream(error: SpartanWhirError) -> ZkError {
-    backend_error(error)
+    match error {
+        SpartanWhirError::InvalidConfig(InvalidConfigReason::ComposedSecurityUnavailable {
+            requested_bits,
+            attainable_bits,
+            ..
+        }) => ZkError::SecurityUnattainable {
+            requested: requested_bits as u16,
+            attainable: attainable_bits as u16,
+        },
+        other => backend_error(other),
+    }
 }
 
 fn check_binding(caps: &Capabilities, backend: &str, version: &str) -> Result<()> {

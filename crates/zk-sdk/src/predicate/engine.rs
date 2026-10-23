@@ -6,11 +6,12 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use super::bundle;
-use super::claim::{Predicate, Statement};
+use super::claim::Predicate;
 use super::commit::Opening;
+use super::statement::Statement;
 use crate::{
-    decode_artifact, encode_artifact, Inputs, KeyPair, Proof, Result, SecurityPolicy,
-    WitnessCalculator, Zk, ZkError,
+    decode_artifact, encode_artifact, CompiledCircuit, Inputs, KeyPair, Proof, Result,
+    SecurityPolicy, WitnessCalculator, Zk, ZkError,
 };
 
 /// The openings the prover holds, in the order of the claim's commitments.
@@ -34,6 +35,16 @@ impl From<(Opening, Opening)> for Witness {
     }
 }
 
+/// Every opening the claim needs, in claim order. One prover must hold all of them: a proof about
+/// values held by different owners needs those owners to pool their openings with one prover
+/// (revealing the values to it) or to run a multi-party computation, which this SDK does not
+/// provide. A single party cannot prove knowledge of secrets it does not have.
+impl From<Vec<Opening>> for Witness {
+    fn from(openings: Vec<Opening>) -> Self {
+        Self(openings)
+    }
+}
+
 /// A proof that a [`Predicate`] holds. It carries no statement: the verifier supplies the claim.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PredicateProof(Vec<u8>);
@@ -49,12 +60,14 @@ impl PredicateProof {
 }
 
 struct Entry {
+    zk: Zk,
+    bits: u16,
     calculator: WitnessCalculator,
     keys: KeyPair,
 }
 
 pub struct Predicates {
-    zk: Zk,
+    policy: SecurityPolicy,
     entries: Mutex<HashMap<String, Arc<Entry>>>,
 }
 
@@ -65,15 +78,37 @@ impl Default for Predicates {
 }
 
 impl Predicates {
-    /// Spartan-WHIR, full zero knowledge, the default 116-bit policy.
+    /// Spartan-WHIR, full zero knowledge, targeting the default 116-bit policy. A circuit whose
+    /// size upstream cannot support at that target is set up at the highest level it can attain
+    /// instead (never below the backend minimum); [`Predicates::security_bits`] reports it.
     pub fn new() -> Self {
         Self::with_policy(SecurityPolicy::default())
     }
 
     pub fn with_policy(policy: SecurityPolicy) -> Self {
         Self {
-            zk: Zk::spartan_whir().with_policy(policy),
+            policy,
             entries: Mutex::default(),
+        }
+    }
+
+    /// The target security level in bits that `circuit` is actually set up at: the policy's, or
+    /// the most upstream attains for that circuit's size when that is lower. Soundness of the
+    /// composed proof system remains unverified end to end.
+    pub fn security_bits(&self, circuit: &str) -> Result<u16> {
+        Ok(self.entry(circuit)?.bits)
+    }
+
+    /// Keys at the policy, or at the level upstream says this circuit can attain.
+    fn setup(&self, compiled: &CompiledCircuit) -> Result<(Zk, KeyPair)> {
+        let zk = Zk::spartan_whir().with_policy(self.policy);
+        match zk.setup(compiled) {
+            Err(ZkError::SecurityUnattainable { attainable, .. }) => {
+                let zk = Zk::spartan_whir().with_policy(self.policy.with_bits(attainable));
+                let keys = zk.setup(compiled)?;
+                Ok((zk, keys))
+            }
+            keys => keys.map(|keys| (zk, keys)),
         }
     }
 
@@ -86,9 +121,12 @@ impl Predicates {
             return Ok(Arc::clone(entry));
         }
         let bundled = bundle::lookup(circuit)?;
-        let compiled = self.zk.compile(bundled.r1cs.to_vec())?;
+        let compiled = Zk::spartan_whir().compile(bundled.r1cs.to_vec())?;
+        let (zk, keys) = self.setup(&compiled)?;
         let entry = Arc::new(Entry {
-            keys: self.zk.setup(&compiled)?,
+            bits: keys.proving.binding().policy.bits,
+            zk,
+            keys,
             calculator: WitnessCalculator::new(bundled.r1cs, bundled.sym)
                 .map_err(|e| ZkError::Format(e.to_string()))?,
         });
@@ -103,8 +141,8 @@ impl Predicates {
         let openings = witness.into().0;
         let inputs = inputs(&statement, claim, &openings)?;
         let entry = self.entry(statement.circuit())?;
-        let private = self.zk.witness(&entry.calculator, &inputs)?;
-        let output = self.zk.prove(&entry.keys.proving, &private)?;
+        let private = entry.zk.witness(&entry.calculator, &inputs)?;
+        let output = entry.zk.prove(&entry.keys.proving, &private)?;
         Ok(PredicateProof(encode_artifact(&output.proof)?))
     }
 
@@ -113,23 +151,14 @@ impl Predicates {
         let statement = claim.statement()?;
         let entry = self.entry(statement.circuit())?;
         let proof: Proof = decode_artifact(&proof.0)?;
-        let expected = self.zk.encode_public_inputs(&statement.public_inputs())?;
-        self.zk.verify(&entry.keys.verifying, &expected, &proof)
-    }
-}
-
-fn commitments(claim: &Predicate) -> Vec<&super::commit::Commitment> {
-    match claim {
-        Predicate::Opens { commitment }
-        | Predicate::Compare { commitment, .. }
-        | Predicate::Range { commitment, .. } => vec![commitment],
-        Predicate::CompareCommitted { left, right, .. } => vec![left, right],
+        let expected = entry.zk.encode_public_inputs(&statement.public_inputs())?;
+        entry.zk.verify(&entry.keys.verifying, &expected, &proof)
     }
 }
 
 /// Public inputs plus the private `limb`/`blinding` signals, after checking each opening matches.
 fn inputs(statement: &Statement, claim: &Predicate, openings: &[Opening]) -> Result<Inputs> {
-    let expected = commitments(claim);
+    let expected = statement.committed();
     if openings.len() != expected.len() {
         return Err(ZkError::Predicate(format!(
             "claim needs {} opening(s), got {}",
@@ -137,6 +166,25 @@ fn inputs(statement: &Statement, claim: &Predicate, openings: &[Opening]) -> Res
             openings.len()
         )));
     }
+    for (index, (opening, commitment)) in openings.iter().zip(expected).enumerate() {
+        if !opening.opens(commitment) {
+            return Err(ZkError::Predicate(format!(
+                "opening {index} does not match its commitment"
+            )));
+        }
+    }
+    let values: Vec<_> = openings.iter().map(Opening::value).collect();
+    if let Some(reason) = claim.refusal(&values)? {
+        return Err(ZkError::Predicate(format!(
+            "the claim is false, so no proof exists: {reason}"
+        )));
+    }
+    assignment(statement, openings)
+}
+
+/// Every circuit input for `openings`, without judging whether the claim is true. The circuit
+/// itself decides: its witness exists exactly when the claim holds.
+pub(super) fn assignment(statement: &Statement, openings: &[Opening]) -> Result<Inputs> {
     let mut inputs = Inputs::new();
     for field in statement.named() {
         if field.array {
@@ -145,22 +193,17 @@ fn inputs(statement: &Statement, claim: &Predicate, openings: &[Opening]) -> Res
             inputs.insert(field.name.to_owned(), field.values[0]);
         }
     }
-    for ((slot, opening), commitment) in statement.slots().iter().zip(openings).zip(expected) {
-        if !opening.opens(commitment) {
-            return Err(ZkError::Predicate(
-                "opening does not match the commitment".into(),
-            ));
-        }
-        put_array(
-            &mut inputs,
-            &format!("{slot}limb"),
-            &statement.ty().limbs(opening.encoded()?),
-        );
-        put_array(
-            &mut inputs,
-            &format!("{slot}blinding"),
-            &opening.blinding().map(u64::from),
-        );
+    let limbs = statement.ty().width.limbs();
+    for slot in statement.slots() {
+        let (limb, blinding) = match slot.source {
+            Some(source) => (
+                statement.ty().limbs(openings[source].encoded()?),
+                openings[source].blinding().map(u64::from),
+            ),
+            None => (vec![0; limbs], [0; 8]),
+        };
+        put_array(&mut inputs, &slot.limb, &limb);
+        put_array(&mut inputs, &slot.blinding, &blinding);
     }
     Ok(inputs)
 }

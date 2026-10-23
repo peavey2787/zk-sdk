@@ -1,13 +1,16 @@
 //! Claims: the public statements a prover proves and a verifier checks.
 //!
 //! A [`Predicate`] is data (serializable to JSON); it names no secret. [`Predicate::statement`]
-//! turns it into the approved circuit name and the exact public inputs that circuit is verified
-//! against, so the statement the verifier trusts is derived from the claim, never from the proof.
+//! (see `statement.rs`) turns it into the approved circuit name and the exact public inputs that
+//! circuit is verified against, so the statement the verifier trusts is derived from the claim,
+//! never from the proof.
+
+use std::cmp::Ordering;
 
 use serde::{Deserialize, Serialize};
 
 use super::commit::Commitment;
-use super::int::{IntType, Number};
+use super::int::Number;
 use crate::{Result, ZkError};
 
 /// Comparison operator, realised by the public acceptance flags `(lt, eq, gt)` of the circuits.
@@ -23,7 +26,7 @@ pub enum Op {
 }
 
 impl Op {
-    fn flags(self) -> [u64; 3] {
+    pub(super) fn flags(self) -> [u64; 3] {
         match self {
             Self::Lt => [1, 0, 0],
             Self::Le => [1, 1, 0],
@@ -32,6 +35,68 @@ impl Op {
             Self::Eq => [0, 1, 0],
             Self::Ne => [1, 0, 1],
         }
+    }
+
+    /// Whether `left op right` holds, given how `left` orders against `right`.
+    pub(super) fn accepts(self, ordering: Ordering) -> bool {
+        let flags = self.flags();
+        flags[match ordering {
+            Ordering::Less => 0,
+            Ordering::Equal => 1,
+            Ordering::Greater => 2,
+        }] == 1
+    }
+}
+
+/// One operand of an arithmetic claim: a number everybody knows, or the value behind a commitment.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Operand {
+    Public(Number),
+    Committed(Commitment),
+}
+
+impl From<Commitment> for Operand {
+    fn from(commitment: Commitment) -> Self {
+        Self::Committed(commitment)
+    }
+}
+
+macro_rules! public_operands {
+    ($($t:ty),*) => {$(
+        impl From<$t> for Operand {
+            fn from(value: $t) -> Self {
+                Self::Public(Number::from(value))
+            }
+        }
+    )*};
+}
+
+public_operands!(u8, u16, u32, u64, u128, i8, i16, i32, i64, i128);
+
+/// JSON form: a commitment is `type:hex...`, a public number is a decimal string.
+impl Serialize for Operand {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
+        match self {
+            Self::Public(number) => serializer.collect_str(number),
+            Self::Committed(commitment) => serializer.serialize_str(&commitment.to_text()),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Operand {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        let operand = if text.contains(':') {
+            Commitment::from_text(&text).map(Self::Committed)
+        } else {
+            text.parse().map(Self::Public)
+        };
+        operand.map_err(serde::de::Error::custom)
     }
 }
 
@@ -60,6 +125,33 @@ pub enum Predicate {
         left: Commitment,
         right: Commitment,
         op: Op,
+    },
+    /// `sum(plus) + plus_constant  op  sum(minus) + minus_constant` on exact integers, over at most
+    /// eight committed values of one type and two non-negative public constants.
+    Sum {
+        plus: Vec<Commitment>,
+        minus: Vec<Commitment>,
+        #[serde(default)]
+        plus_constant: Number,
+        #[serde(default)]
+        minus_constant: Number,
+        op: Op,
+    },
+    /// `x * y + z  op  t` on exact integers; each operand is public or committed.
+    Arithmetic {
+        x: Operand,
+        y: Operand,
+        z: Operand,
+        t: Operand,
+        op: Op,
+    },
+    /// Euclidean division: `dividend = quotient * divisor + remainder`, `divisor > 0` and
+    /// `0 <= remainder < divisor`.
+    Divide {
+        dividend: Operand,
+        divisor: Operand,
+        quotient: Operand,
+        remainder: Operand,
     },
 }
 
@@ -125,256 +217,116 @@ impl Predicate {
         Self::CompareCommitted { left, right, op }
     }
 
+    /// `sum(plus) + plus_constant  op  sum(minus) + minus_constant`.
+    pub fn sum(
+        plus: Vec<Commitment>,
+        plus_constant: impl Into<Number>,
+        op: Op,
+        minus: Vec<Commitment>,
+        minus_constant: impl Into<Number>,
+    ) -> Self {
+        Self::Sum {
+            plus,
+            minus,
+            plus_constant: plus_constant.into(),
+            minus_constant: minus_constant.into(),
+            op,
+        }
+    }
+
+    /// Conservation: `sum(inputs) == sum(outputs) + fees`.
+    pub fn conserve(
+        inputs: Vec<Commitment>,
+        outputs: Vec<Commitment>,
+        fees: impl Into<Number>,
+    ) -> Self {
+        Self::sum(inputs, 0, Op::Eq, outputs, fees)
+    }
+
+    /// Conservation with authorised supply changes:
+    /// `sum(inputs) + minted == sum(outputs) + fees + burned`. Fails if `fees + burned` overflows.
+    pub fn conserve_with_supply(
+        inputs: Vec<Commitment>,
+        outputs: Vec<Commitment>,
+        fees: impl Into<Number>,
+        minted: impl Into<Number>,
+        burned: impl Into<Number>,
+    ) -> Result<Self> {
+        let leaving = fees
+            .into()
+            .checked_add_unsigned(burned.into())
+            .ok_or_else(|| {
+                ZkError::Predicate("fees + burned must be non-negative and fit u128".into())
+            })?;
+        Ok(Self::sum(inputs, minted, Op::Eq, outputs, leaving))
+    }
+
+    /// `a + b == total`.
+    pub fn add(a: Commitment, b: Commitment, total: Commitment) -> Self {
+        Self::sum(vec![a, b], 0, Op::Eq, vec![total], 0)
+    }
+
+    /// `a - b == difference`.
+    pub fn subtract(a: Commitment, b: Commitment, difference: Commitment) -> Self {
+        Self::sum(vec![a], 0, Op::Eq, vec![b, difference], 0)
+    }
+
+    /// `sum(terms) == total`.
+    pub fn sum_equals(terms: Vec<Commitment>, total: Commitment) -> Self {
+        Self::sum(terms, 0, Op::Eq, vec![total], 0)
+    }
+
+    /// `sum(terms) op bound`: a balance, inventory or quantity invariant.
+    pub fn total_compare(terms: Vec<Commitment>, op: Op, bound: impl Into<Number>) -> Self {
+        Self::sum(terms, 0, op, Vec::new(), bound)
+    }
+
+    /// `x * y + z  op  t`.
+    pub fn arithmetic(
+        x: impl Into<Operand>,
+        y: impl Into<Operand>,
+        z: impl Into<Operand>,
+        op: Op,
+        t: impl Into<Operand>,
+    ) -> Self {
+        Self::Arithmetic {
+            x: x.into(),
+            y: y.into(),
+            z: z.into(),
+            t: t.into(),
+            op,
+        }
+    }
+
+    /// `x * y == product` with no overflow (the exact product must equal `product`).
+    pub fn multiply(
+        x: impl Into<Operand>,
+        y: impl Into<Operand>,
+        product: impl Into<Operand>,
+    ) -> Self {
+        Self::arithmetic(x, y, 0u8, Op::Eq, product)
+    }
+
+    /// `dividend = quotient * divisor + remainder`, `divisor > 0`, `0 <= remainder < divisor`.
+    pub fn divide(
+        dividend: impl Into<Operand>,
+        divisor: impl Into<Operand>,
+        quotient: impl Into<Operand>,
+        remainder: impl Into<Operand>,
+    ) -> Self {
+        Self::Divide {
+            dividend: dividend.into(),
+            divisor: divisor.into(),
+            quotient: quotient.into(),
+            remainder: remainder.into(),
+        }
+    }
+
     pub fn to_json(&self) -> String {
         serde_json::to_string(self).expect("claims always serialize")
     }
 
     pub fn from_json(text: &str) -> Result<Self> {
         serde_json::from_str(text).map_err(|e| ZkError::Format(e.to_string()))
-    }
-
-    /// The approved circuit and public inputs for this claim. Fails when a bound does not fit the
-    /// committed type or two commitments disagree on type.
-    pub fn statement(&self) -> Result<Statement> {
-        match self {
-            Self::Opens { commitment } => Ok(Statement::new(
-                "open",
-                commitment.ty(),
-                &[""],
-                vec![digest("commitment", commitment), signed(commitment.ty())],
-            )),
-            Self::Compare {
-                commitment,
-                op,
-                bound,
-            } => {
-                let ty = commitment.ty();
-                Ok(Statement::new(
-                    "compare",
-                    ty,
-                    &[""],
-                    vec![
-                        digest("commitment", commitment),
-                        signed(ty),
-                        scalar("accept_lt", op.flags()[0]),
-                        scalar("accept_eq", op.flags()[1]),
-                        scalar("accept_gt", op.flags()[2]),
-                        limbs("bound", ty, *bound)?,
-                    ],
-                ))
-            }
-            Self::Range {
-                commitment,
-                lo,
-                hi,
-                lo_inclusive,
-                hi_inclusive,
-            } => {
-                let ty = commitment.ty();
-                Ok(Statement::new(
-                    "range",
-                    ty,
-                    &[""],
-                    vec![
-                        digest("commitment", commitment),
-                        signed(ty),
-                        scalar("lo_inclusive", u64::from(*lo_inclusive)),
-                        scalar("hi_inclusive", u64::from(*hi_inclusive)),
-                        limbs("lo", ty, *lo)?,
-                        limbs("hi", ty, *hi)?,
-                    ],
-                ))
-            }
-            Self::CompareCommitted { left, right, op } => {
-                if left.ty() != right.ty() {
-                    return Err(ZkError::Predicate(format!(
-                        "cannot compare {} with {}",
-                        left.ty(),
-                        right.ty()
-                    )));
-                }
-                Ok(Statement::new(
-                    "compare_committed",
-                    left.ty(),
-                    &["left_", "right_"],
-                    vec![
-                        digest("left", left),
-                        digest("right", right),
-                        signed(left.ty()),
-                        scalar("accept_lt", op.flags()[0]),
-                        scalar("accept_eq", op.flags()[1]),
-                        scalar("accept_gt", op.flags()[2]),
-                    ],
-                ))
-            }
-        }
-    }
-}
-
-/// One named circuit input: a scalar signal, or an array signal addressed as `name[i]`.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct Field {
-    pub name: &'static str,
-    pub values: Vec<u64>,
-    pub array: bool,
-}
-
-fn scalar(name: &'static str, value: u64) -> Field {
-    Field {
-        name,
-        values: vec![value],
-        array: false,
-    }
-}
-
-fn array(name: &'static str, values: Vec<u64>) -> Field {
-    Field {
-        name,
-        values,
-        array: true,
-    }
-}
-
-fn digest(name: &'static str, commitment: &Commitment) -> Field {
-    array(
-        name,
-        commitment.digest().iter().map(|d| u64::from(*d)).collect(),
-    )
-}
-
-fn signed(ty: IntType) -> Field {
-    scalar("signed", u64::from(ty.signed))
-}
-
-fn limbs(name: &'static str, ty: IntType, number: Number) -> Result<Field> {
-    Ok(array(name, ty.limbs(ty.encode(number)?)))
-}
-
-/// A claim lowered to its circuit: the public inputs by circuit signal name, in declaration order.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Statement {
-    circuit: String,
-    ty: IntType,
-    slots: &'static [&'static str],
-    fields: Vec<Field>,
-}
-
-impl Statement {
-    fn new(family: &str, ty: IntType, slots: &'static [&'static str], fields: Vec<Field>) -> Self {
-        Self {
-            circuit: format!("{family}_{}", ty.width.bits()),
-            ty,
-            slots,
-            fields,
-        }
-    }
-
-    pub fn circuit(&self) -> &str {
-        &self.circuit
-    }
-
-    pub fn ty(&self) -> IntType {
-        self.ty
-    }
-
-    /// Prefixes of the private `limb`/`blinding` signals: one opening per slot.
-    pub(super) fn slots(&self) -> &'static [&'static str] {
-        self.slots
-    }
-
-    pub(super) fn named(&self) -> &[Field] {
-        &self.fields
-    }
-
-    /// The flat public input vector the verifier checks the proof against.
-    pub fn public_inputs(&self) -> Vec<u64> {
-        self.fields
-            .iter()
-            .flat_map(|f| f.values.iter().copied())
-            .collect()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn commitment(ty: IntType) -> Commitment {
-        Commitment::commit_with_blinding(ty, 1u8, [1; 8]).unwrap().0
-    }
-
-    #[test]
-    fn statements_pick_circuit_by_family_and_width() {
-        let c = commitment(IntType::U64);
-        assert_eq!(
-            Predicate::at_least(c, 18).statement().unwrap().circuit(),
-            "compare_64"
-        );
-        assert_eq!(
-            Predicate::opens(c).statement().unwrap().circuit(),
-            "open_64"
-        );
-        assert_eq!(
-            Predicate::in_range(c, 1, 2).statement().unwrap().circuit(),
-            "range_64"
-        );
-        let wide = commitment(IntType::I128);
-        let pair = Predicate::compare_committed(wide, Op::Lt, wide);
-        assert_eq!(pair.statement().unwrap().circuit(), "compare_committed_128");
-    }
-
-    #[test]
-    fn public_inputs_follow_circuit_declaration_order() {
-        let c = commitment(IntType::U32);
-        let inputs = Predicate::at_least(c, 0x0003_0002u32)
-            .statement()
-            .unwrap()
-            .public_inputs();
-        assert_eq!(inputs.len(), 8 + 1 + 3 + 2);
-        assert_eq!(&inputs[8..12], &[0, 0, 1, 1], "unsigned, then ge = (0,1,1)");
-        assert_eq!(&inputs[12..], &[2, 3], "little-endian 16-bit limbs");
-    }
-
-    #[test]
-    fn operator_flags_are_the_six_comparisons() {
-        let flags: Vec<_> = [Op::Lt, Op::Le, Op::Gt, Op::Ge, Op::Eq, Op::Ne]
-            .map(Op::flags)
-            .to_vec();
-        assert_eq!(
-            flags,
-            [
-                [1, 0, 0],
-                [1, 1, 0],
-                [0, 0, 1],
-                [0, 1, 1],
-                [0, 1, 0],
-                [1, 0, 1]
-            ]
-        );
-    }
-
-    #[test]
-    fn out_of_range_bounds_and_mixed_types_are_rejected() {
-        let c = commitment(IntType::U32);
-        assert!(Predicate::at_least(c, u64::MAX).statement().is_err());
-        assert!(Predicate::at_least(c, -1).statement().is_err());
-        assert!(Predicate::in_range(c, 0, 1u64 << 32).statement().is_err());
-        let mixed = Predicate::compare_committed(c, Op::Eq, commitment(IntType::I32));
-        assert!(mixed.statement().is_err());
-    }
-
-    #[test]
-    fn json_round_trips_and_rejects_unknown_shapes() {
-        let c = commitment(IntType::I64);
-        for claim in [
-            Predicate::opens(c),
-            Predicate::not_equals(c, -7),
-            Predicate::in_range_with(c, -5, 5, false, true),
-            Predicate::compare_committed(c, Op::Ge, c),
-        ] {
-            assert_eq!(Predicate::from_json(&claim.to_json()).unwrap(), claim);
-        }
-        assert!(Predicate::from_json(r#"{"kind":"teleport"}"#).is_err());
-        assert!(Predicate::from_json("{}").is_err());
     }
 }

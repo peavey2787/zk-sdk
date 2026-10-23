@@ -249,19 +249,20 @@ mod predicates {
                 claim(dir.path(), name, &json),
                 dir.path().join(format!("{name}.proof")),
             );
-            let mut prove = vec![
+            let list = secrets
+                .iter()
+                .map(|s| path(s))
+                .collect::<Vec<_>>()
+                .join(",");
+            ok(&[
                 "prove",
                 "--claim",
                 path(&claim_file),
-                "--secret",
-                path(secrets[0]),
+                "--secrets",
+                &list,
                 "--proof",
                 path(&proof),
-            ];
-            if let Some(second) = secrets.get(1) {
-                prove.extend(["--secret2", path(second)]);
-            }
-            ok(&prove);
+            ]);
             ok(&[
                 "verify",
                 "--claim",
@@ -280,6 +281,89 @@ mod predicates {
     }
 
     #[test]
+    fn conservation_proves_and_verifies_in_separate_processes() {
+        let dir = tempfile::tempdir().unwrap();
+        let values = [
+            ("in1", "700"),
+            ("in2", "300"),
+            ("out1", "960"),
+            ("out2", "30"),
+        ];
+        let made: Vec<_> = values
+            .iter()
+            .map(|(name, value)| commit(dir.path(), name, "u64", value))
+            .collect();
+        let conserve = |fee: u32| {
+            format!(
+                r#"{{"kind":"sum","plus":["{}","{}"],"minus":["{}","{}"],"minus_constant":"{fee}","op":"eq"}}"#,
+                made[0].0, made[1].0, made[2].0, made[3].0
+            )
+        };
+        let secrets = made
+            .iter()
+            .map(|m| path(&m.1))
+            .collect::<Vec<_>>()
+            .join(",");
+        let (claim_file, proof) = (
+            claim(dir.path(), "c", &conserve(10)),
+            dir.path().join("c.proof"),
+        );
+        ok(&[
+            "prove",
+            "--claim",
+            path(&claim_file),
+            "--secrets",
+            &secrets,
+            "--proof",
+            path(&proof),
+        ]);
+        ok(&[
+            "verify",
+            "--claim",
+            path(&claim_file),
+            "--proof",
+            path(&proof),
+        ]);
+        let described = run(&["describe", "--claim", path(&claim_file)]);
+        assert!(String::from_utf8_lossy(&described.stdout).starts_with("sum4_64 115-bit"));
+        let unbalanced = claim(dir.path(), "u", &conserve(11));
+        assert!(!run(&[
+            "verify",
+            "--claim",
+            path(&unbalanced),
+            "--proof",
+            path(&proof)
+        ])
+        .status
+        .success());
+        let refused = dir.path().join("refused.proof");
+        assert!(!run(&[
+            "prove",
+            "--claim",
+            path(&unbalanced),
+            "--secrets",
+            &secrets,
+            "--proof",
+            path(&refused)
+        ])
+        .status
+        .success());
+        assert!(!refused.exists());
+        let short = path(&made[0].1);
+        assert!(!run(&[
+            "prove",
+            "--claim",
+            path(&claim_file),
+            "--secrets",
+            short,
+            "--proof",
+            path(&refused)
+        ])
+        .status
+        .success());
+    }
+
+    #[test]
     fn false_claims_and_bad_inputs_fail_closed() {
         let dir = tempfile::tempdir().unwrap();
         let (age, secret) = commit(dir.path(), "age", "u32", "17");
@@ -293,7 +377,7 @@ mod predicates {
             "prove",
             "--claim",
             path(&false_claim),
-            "--secret",
+            "--secrets",
             path(&secret),
             "--proof",
             path(&proof)

@@ -5,6 +5,24 @@ use super::bundle::Bundled;
 
 pub(super) const BUNDLED: &[Bundled] = &[
     Bundled {
+        name: "arith_128",
+        r1cs: include_bytes!("../../../../testdata/predicates/arith_128.r1cs"),
+        sym: include_str!("../../../../testdata/predicates/arith_128.sym"),
+        sha256: "1ec1126f6b408d7e117f756a3dfc1ff19c441f488402ea4b72a6f58bf9896f90",
+    },
+    Bundled {
+        name: "arith_32",
+        r1cs: include_bytes!("../../../../testdata/predicates/arith_32.r1cs"),
+        sym: include_str!("../../../../testdata/predicates/arith_32.sym"),
+        sha256: "e9d3588649a154573255f1fa7e81aa28fa20707299ce184dccc96bde85b2b3fb",
+    },
+    Bundled {
+        name: "arith_64",
+        r1cs: include_bytes!("../../../../testdata/predicates/arith_64.r1cs"),
+        sym: include_str!("../../../../testdata/predicates/arith_64.sym"),
+        sha256: "f7069d3f16d8d731feacbcf703ddbc0e41ffba6ce6251783b5819bbe2185c1b7",
+    },
+    Bundled {
         name: "compare_128",
         r1cs: include_bytes!("../../../../testdata/predicates/compare_128.r1cs"),
         sym: include_str!("../../../../testdata/predicates/compare_128.sym"),
@@ -75,5 +93,41 @@ pub(super) const BUNDLED: &[Bundled] = &[
         r1cs: include_bytes!("../../../../testdata/predicates/range_64.r1cs"),
         sym: include_str!("../../../../testdata/predicates/range_64.sym"),
         sha256: "022c2b67dfd2531e604b0bc3b67577fc6f5ae69a563f0f00bbab630d6e405582",
+    },
+    Bundled {
+        name: "sum4_128",
+        r1cs: include_bytes!("../../../../testdata/predicates/sum4_128.r1cs"),
+        sym: include_str!("../../../../testdata/predicates/sum4_128.sym"),
+        sha256: "e27a03787c23f54a441eac8b676ec31a9b0f6abc9a1fed94cadbf12f696a6794",
+    },
+    Bundled {
+        name: "sum4_32",
+        r1cs: include_bytes!("../../../../testdata/predicates/sum4_32.r1cs"),
+        sym: include_str!("../../../../testdata/predicates/sum4_32.sym"),
+        sha256: "33e69fd296362b1259d3a333c42626e00e321516d7fbe63efd649a62a031e60d",
+    },
+    Bundled {
+        name: "sum4_64",
+        r1cs: include_bytes!("../../../../testdata/predicates/sum4_64.r1cs"),
+        sym: include_str!("../../../../testdata/predicates/sum4_64.sym"),
+        sha256: "0d2d9781fd20ce46f97c1b424b1f41b386742f5dd36a1a782d8e1d90e6043f85",
+    },
+    Bundled {
+        name: "sum8_128",
+        r1cs: include_bytes!("../../../../testdata/predicates/sum8_128.r1cs"),
+        sym: include_str!("../../../../testdata/predicates/sum8_128.sym"),
+        sha256: "9e6348d5ea5d6ccac46a22904d5d9c20ae4fb5a9d56db73714e8a1d228668fef",
+    },
+    Bundled {
+        name: "sum8_32",
+        r1cs: include_bytes!("../../../../testdata/predicates/sum8_32.r1cs"),
+        sym: include_str!("../../../../testdata/predicates/sum8_32.sym"),
+        sha256: "b89f03cc0fa1298f82e4c35f4c89cd5bb36a7f698c0043488cb80b8ffb4e975e",
+    },
+    Bundled {
+        name: "sum8_64",
+        r1cs: include_bytes!("../../../../testdata/predicates/sum8_64.r1cs"),
+        sym: include_str!("../../../../testdata/predicates/sum8_64.sym"),
+        sha256: "56c22ddbc5508e3d467791e27aa3a14dce0f359f08ea5dec109ca2ac465eff8a",
     },
 ];

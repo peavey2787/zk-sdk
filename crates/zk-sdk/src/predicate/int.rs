@@ -111,10 +111,25 @@ impl std::str::FromStr for IntType {
 }
 
 /// A mathematical integer in `[-2^127, 2^128)`, convertible from every primitive integer type.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Number {
     negative: bool,
     magnitude: u128,
+}
+
+impl Number {
+    /// Sign and absolute value.
+    pub(super) fn parts(self) -> (bool, u128) {
+        (self.negative, self.magnitude)
+    }
+
+    /// `self + other` for two non-negative numbers; `None` on overflow of `u128` or a negative input.
+    pub fn checked_add_unsigned(self, other: Self) -> Option<Self> {
+        (!self.negative && !other.negative)
+            .then(|| self.magnitude.checked_add(other.magnitude))
+            .flatten()
+            .map(Self::from)
+    }
 }
 
 impl std::fmt::Display for Number {

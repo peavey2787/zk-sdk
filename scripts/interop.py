@@ -53,8 +53,7 @@ class Backend:
 
     def predicate_prove(self, claim, proof, secrets):
         if self.name == "native":
-            flags = ["--secret", secrets[0]] + (["--secret2", secrets[1]] if len(secrets) > 1 else [])
-            run([CLI, "predicate", "prove", "--claim", claim, *flags, "--proof", proof])
+            run([CLI, "predicate", "prove", "--claim", claim, "--secrets", ",".join(str(secret) for secret in secrets), "--proof", proof])
         else:
             run(["node", TOOL, NODE_PKG, "predicate-prove", claim, proof, *secrets])
 
@@ -88,17 +87,31 @@ def predicate_claims(c):
     rng = lambda lo: f'{{"kind":"range","commitment":"{c["wide"]}","lo":"{lo}","hi":"5","lo_inclusive":true,"hi_inclusive":false}}'
     pair = lambda op: f'{{"kind":"compare_committed","left":"{c["low"]}","right":"{c["high"]}","op":"{op}"}}'
     opens = lambda name: f'{{"kind":"opens","commitment":"{c[name]}"}}'
+    conserve = lambda fee: (
+        f'{{"kind":"sum","plus":["{c["in1"]}","{c["in2"]}"],"minus":["{c["out1"]}","{c["out2"]}"],'
+        f'"plus_constant":"0","minus_constant":"{fee}","op":"eq"}}'
+    )
+    product = lambda y: f'{{"kind":"arithmetic","x":"{c["in2"]}","y":"{y}","z":"{c["out2"]}","t":"{c["out1"]}","op":"lt"}}'
+    divide = lambda divisor: (
+        f'{{"kind":"divide","dividend":"{c["rem_dividend"]}","divisor":"{divisor}",'
+        f'"quotient":"{c["quotient"]}","remainder":"{c["remainder"]}"}}'
+    )
     return {
         "opens": (opens("age"), opens("low"), ["age"]),
         "ge_u32": (ge(18), ge(19), ["age"]),
         "range_i128": (rng(-9), rng(-8), ["wide"]),
         "pair_i64": (pair("lt"), pair("gt"), ["low", "high"]),
+        "conserve_u64": (conserve(10), conserve(11), ["in1", "in2", "out1", "out2"]),
+        "product_u64": (product(3), product(4), ["in2", "out2", "out1"]),
+        "divide_u64": (divide(9), divide(10), ["rem_dividend", "quotient", "remainder"]),
     }
 
 
 def predicate_matrix(backends, tmp):
     makers = itertools.cycle(backends.values())
-    specs = {"age": ("u32", "20"), "wide": ("i128", "-7"), "low": ("i64", "-3"), "high": ("i64", "9")}
+    specs = {"age": ("u32", "20"), "wide": ("i128", "-7"), "low": ("i64", "-3"), "high": ("i64", "9"),
+             "in1": ("u64", "700"), "in2": ("u64", "300"), "out1": ("u64", "960"), "out2": ("u64", "30"),
+             "rem_dividend": ("u64", "47"), "quotient": ("u64", "5"), "remainder": ("u64", "2")}
     commitments, secrets = {}, {}
     for name, (ty, value) in specs.items():
         maker = next(makers)

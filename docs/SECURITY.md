@@ -17,6 +17,8 @@ Default 116 bits, full ZK, Johnson bound. Upstream accepts 80..=123 in principle
 
 Parameters are upstream's `recommended_quintic_zk_whir_params` unmodified, including its proof-of-work grinding. An earlier revision capped grinding at 12 bits for latency; it was removed because the claim that the query budget compensates was unverified (proof size did not change, which suggests it does not) and security takes priority over the latency target.
 
+**Attained level per circuit.** For the larger predicate circuits (above 8192 constraints: `sum4_64` and up, `sum8_*`, `arith_*`) upstream's own composed-security check refuses a 116-bit target and accepts at most 115. `Predicates` sets each circuit up at the policy's target or, when upstream reports a lower attainable level (`ZkError::SecurityUnattainable`), at exactly that level, never below the backend minimum of 100 and never raised. `Predicates::security_bits(circuit)` and `zk predicate describe` report the level in force; the level is part of the key binding, so a proof made at one level is refused at another. Nothing here changes a WHIR or grinding parameter.
+
 Regression guards: unit tests in `zk-spartan-whir/src/params.rs` pin the profile (WHIR parameters equal upstream's recommendation for every policy and size, grinding not below upstream's floor, requested bits/soundness passed through, full-ZK only, pinned revision), and `scripts/check-layout.py` fails the build if any source assigns or clamps WHIR parameters. Not yet done: an independent recomputation of the end-to-end soundness error from the WHIR/Spartan formulas. The 116-bit figure is a configured classical protocol-soundness target; no post-quantum security level is claimed.
 
 ## Randomness and secrets

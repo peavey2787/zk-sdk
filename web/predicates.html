@@ -28,8 +28,14 @@ responsive during multi-second proofs. Private values never leave this tab. Back
   <legend>Predicate</legend>
   <label>Family <select id="family"></select></label>
   <label>Integer type <select id="type"></select></label>
-  <label>Private value <input id="valueA" type="text" value="20"></label>
-  <label id="rowB">Second private value <input id="valueB" type="text" value="30"></label>
+  <label id="rowValueA">Private value <input id="valueA" type="text" value="20"></label>
+  <label id="rowValueB">Second private value <input id="valueB" type="text" value="30"></label>
+  <label id="rowInputs">Private inputs / values (comma separated, at most 8 in all)
+    <input id="inputs" type="text" value="700, 300"></label>
+  <label id="rowOutputs">Private outputs (comma separated)
+    <input id="outputs" type="text" value="960, 30"></label>
+  <label id="rowFee">Public fee <input id="fee" type="text" value="10"></label>
+  <div id="rowOperands"></div>
   <label id="rowOp">Operator <select id="op"></select></label>
   <label id="rowBound">Public bound <input id="bound" type="text" value="18"></label>
   <label id="rowLo">Range low <input id="lo" type="text" value="18"></label>

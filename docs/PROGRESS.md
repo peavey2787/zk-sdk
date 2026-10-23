@@ -20,7 +20,9 @@ Measured on Windows 11, native `x86_64-pc-windows-msvc`, rustc 1.98.1; wasm in h
 | Native <-> WASM predicate interop | **Validated (Windows host)** | `scripts/interop.py`: native- and WASM-made commitments, proofs from both verified by both, altered-claim and corrupted-proof negatives |
 | Per-predicate browser perf | **Measured** | table below; 5 samples, so p50 only |
 | Circuit reproducibility (`scripts/build_circuits.py --check`) | **In the full gate** | byte-identical rebuild on Windows; Linux result comes from CI |
-| Arithmetic, set/Merkle membership, proximity, credentials, state transitions, composition | **Not started** | |
+| Arithmetic and conservation: sums, balances, conservation (fees, mint/burn), products, bounded division, mixed public/private operands, six types | **Validated** | circuits vs unbounded-integer reference: `predicate/differential.rs` (5 suites x 40 rounds x 6 types, true and false cases); real proofs: `crates/zk-sdk/tests/arithmetic.rs` (14 tests incl. tampering, wrap-around, wrong openings); CLI e2e; browser self-test (22 checks, real in-browser proofs); native<->WASM interop for conserve/product/divide |
+| CI for `3623bc0` (previous milestone) | **Validated** | `validate` job green on ubuntu-latest and windows-latest (incl. Linux circuit reproducibility and interop); the separate `performance` job fails as before (latency gate, `continue-on-error`) |
+| Set/Merkle membership, proximity, credentials, state transitions, composition | **Not started** | |
 
 ## Performance (Ryzen 7 5800X, Windows 11, default 116-bit full ZK, upstream parameters)
 
@@ -37,6 +39,21 @@ Latency is gated separately from security/correctness: `run-all ... perf` (own C
 **The secure prover does not meet the 1000 ms target in the browser (p50 ~6.9 s, p95 ~20 s) and misses it at p95/p99 natively.** Cause: upstream's proof-of-work grinding is a random nonce search with a heavy tail; threads hide it natively but browser WASM is single-threaded. The 70-90 ms figures reported earlier came from a 12-bit grinding cap that was reverted because its security effect was not established.
 
 Unresolved: security-preserving options not yet evaluated, each requiring its own soundness review: multi-worker grinding (needs an upstream change or WASM threads with cross-origin isolation), an upstream-approved parameter schedule with matching soundness calculations, a faster Poseidon hash, or a different transparent backend. Applications must prove asynchronously (the demo already runs in a Worker). Key decode/prepare/witness import/encode total under 0.5 ms, so key caching saves nothing. The AVX2 build is optional and not benchmarked separately yet.
+
+### Arithmetic and conservation circuits
+
+Constraints: `sum4` 7963 / 8403 / 12947, `sum8` 15487 / 16079 / 24591, `arith` 8506 / 9548 / 15392 (32 / 64 / 128-bit). **Upstream attains 116 bits only up to 8192 constraints**: `sum4_32` runs at 116, every larger circuit at 115 (reported by `Predicates::security_bits`, see SECURITY). Native, Ryzen 7 5800X, 16 threads, 20 samples, whole prove call (`bench_predicates`); optimized = `-C target-cpu=x86-64-v3`:
+
+| Circuit (32 / 64 / 128-bit) | native portable p50 | native portable p95 | native optimized p50 | native optimized p95 | proof |
+|---|---|---|---|---|---|
+| conserve4 (`sum4`) | 1815 / 3440 / 3051 ms | 2965 / 5537 / 4950 | 331 / 556 / 696 ms | 436 / 779 / 973 | 822-880 KB |
+| conserve8 (`sum8`) | 2820 / 3779 / 4074 ms | 5234 / 4632 / 5467 | 744 / 631 / 1041 ms | 940 / 959 / 1393 | 876-975 KB |
+| multiply (`arith`) | 3077 / 2725 / 3144 ms | 3645 / 4762 / 5712 | 492 / 501 / 654 ms | 657 / 802 / 844 | 876-881 KB |
+| divide (`arith`) | 3131 / 2764 / 2885 ms | 4414 / 3828 / 4527 | 541 / 533 / 669 ms | 760 / 735 / 905 | 880-886 KB |
+
+Verify 33-75 ms. **Target status (optimized build):** only `conserve4_32` (331 ms) and `multiply_32` (492 ms) meet the 500 ms target; every other new circuit lands at 501-1041 ms, and `conserve8_128` (1041 ms) exceeds the 1000 ms ceiling. The portable build misses both targets everywhere (1.8-4.1 s). The machine was not quiet (the pre-existing circuits measured 1.0-1.5 s portable in this run versus 1.06-1.77 s before). These are performance misses, reported as such; no parameter was touched.
+
+**Browser (headless Chromium 155 via `scripts/browser_test.py predicates-perftest.html?n=3`, Worker, portable WASM, n=3 so p50 only; p95/p99 not reported).** Real in-browser proofs, all verified. Prove p50 (ms): opens 13774 / 11591 / 31137; compare 18787 / 15109 / 18975; range 20528 / 19173 / 19301; compare_committed 19211 / 17500 / 17356; conserve4 21417 / 36552 / 56188; conserve8 34948 / 22247 / 59065; multiply 34139 / 41410 / 31188; divide 52104 / 46448 / 29733 (32 / 64 / 128-bit). Verify 59-160 ms, proofs 0.63-0.97 MB, WASM memory up to 226 MiB, UI stall at most 5 ms. **Every circuit misses the 500 ms and 1000 ms browser targets by 10-60x**, the pre-existing four families included, and the run is far noisier than native (the same circuit varies 2x between first prove and p50). Timings were taken on a machine that was also doing other work during part of the run, so treat them as an upper bound, not a characterisation; the browser performance gap is open and is not closed by this milestone.
 
 ### Predicate library (all 12 circuits, default upstream 116-bit full-ZK policy)
 

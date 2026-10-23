@@ -10,6 +10,10 @@ pub enum ZkError {
     Format(String),
     #[error("security configuration rejected: {0}")]
     Policy(String),
+    #[error(
+        "requested {requested} bits of security, but this circuit can attain at most {attainable}"
+    )]
+    SecurityUnattainable { requested: u16, attainable: u16 },
     #[error("backend unavailable: {0}")]
     Unavailable(String),
     #[error("backend operation failed: {0}")]

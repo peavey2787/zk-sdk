@@ -196,6 +196,10 @@ impl Opening {
                 .is_ok_and(|encoded| digest(self.ty, encoded, &self.blinding) == commitment.digest)
     }
 
+    pub(super) fn value(&self) -> Number {
+        self.value
+    }
+
     pub(super) fn encoded(&self) -> Result<u128> {
         self.ty.encode(self.value)
     }

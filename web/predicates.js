@@ -1,10 +1,15 @@
-import { buildClaim, FAMILIES, INT_TYPES, OPS } from "./claims.js";
+import { buildClaim, FAMILIES, INT_TYPES, OPS, privateValues } from "./claims.js";
 import { JobRunner } from "./job-runner.js";
 
 const $ = (id) => document.getElementById(id);
 const runner = new JobRunner("./worker.js");
 const state = { secrets: [], proof: null };
-const ROWS = { op: "rowOp", bound: "rowBound", lo: "rowLo", hi: "rowHi", ends: "rowEnds" };
+const ROWS = {
+  valueA: "rowValueA", valueB: "rowValueB", op: "rowOp", bound: "rowBound", lo: "rowLo", hi: "rowHi",
+  ends: "rowEnds", inputs: "rowInputs", outputs: "rowOutputs", fee: "rowFee", operands: "rowOperands",
+};
+const DEFAULT_OPERANDS = { x: "300", y: "3", z: "30", t: "900", dividend: "47", divisor: "9", quotient: "5", remainder: "2" };
+const PUBLIC_BY_DEFAULT = new Set(["y", "divisor"]);
 
 function log(message, kind = "") {
   $("log").prepend(Object.assign(document.createElement("div"), { className: kind, textContent: message }));
@@ -13,16 +18,33 @@ function log(message, kind = "") {
 const text = (id) => $(id).value.trim();
 
 function form() {
+  const operands = (FAMILIES[$("family").value].operands ?? []).map((name) => ({
+    mode: $(`mode-${name}`).value, value: text(`operand-${name}`),
+  }));
   return {
     op: $("op").value, bound: text("bound"), lo: text("lo"), hi: text("hi"),
     loInclusive: $("loInclusive").checked, hiInclusive: $("hiInclusive").checked,
+    valueA: text("valueA"), valueB: text("valueB"),
+    inputs: text("inputs"), outputs: text("outputs"), fee: text("fee"), operands,
   };
+}
+
+// One row per operand: public (visible in the claim) or private (committed, never revealed).
+function renderOperands(names) {
+  $("rowOperands").replaceChildren(...names.map((name) => {
+    const label = Object.assign(document.createElement("label"), { textContent: `${name} ` });
+    const mode = Object.assign(document.createElement("select"), { id: `mode-${name}` });
+    mode.append(new Option("private", "private", false, !PUBLIC_BY_DEFAULT.has(name)), new Option("public", "public", false, PUBLIC_BY_DEFAULT.has(name)));
+    const value = Object.assign(document.createElement("input"), { id: `operand-${name}`, type: "text", value: DEFAULT_OPERANDS[name] });
+    label.append(mode, " ", value);
+    return label;
+  }));
 }
 
 function renderFamily() {
   const family = FAMILIES[$("family").value];
   for (const [field, row] of Object.entries(ROWS)) $(row).classList.toggle("hidden", !family.fields.includes(field));
-  $("rowB").classList.toggle("hidden", family.committed < 2);
+  renderOperands(family.operands ?? []);
 }
 
 function setBusy(busy) {
@@ -56,8 +78,8 @@ async function job(label, work) {
 const show = (id, ms) => ($(id).textContent = `${ms} ms`);
 
 async function commit() {
-  const family = FAMILIES[$("family").value];
-  const values = [text("valueA"), text("valueB")].slice(0, family.committed);
+  const values = privateValues($("family").value, form());
+  if (!values.length) throw new Error("the claim needs at least one private value");
   const made = [];
   let total = 0;
   for (const value of values) {

@@ -14,9 +14,10 @@ Keep the facade at six operations. Mark a milestone done only when its acceptanc
 
 - [x] Predicate library, first four families (opening, comparison, range, committed comparison) across `u32 i32 u64 i64 u128 i128`: Rust, CLI and browser WASM, native/WASM interop, circuit reproducibility check in the gate.
 
+- [x] Arithmetic and conservation: sums, balances, conservation with fees and explicit mint/burn, products, bounded division, mixed public/private operands, all six types; differential-tested against a reference semantics; Rust, CLI, browser, native/WASM interop.
+
 ## Next predicate families (in order; reuse the shared gadgets in `circuits/lib`)
 
-- [ ] Arithmetic relations and conservation constraints.
 - [ ] Merkle/set membership and non-membership.
 - [ ] Private proximity and distance.
 - [ ] Composition (`all`, `any`, constrained `not`) with shared-witness binding.

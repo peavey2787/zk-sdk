@@ -19,6 +19,21 @@ let (prover, verifier) = circuit.setup_with(policy)?;
 
 `prover.to_bytes()` / `Prover::from_bytes` and the `Verifier` equivalents store and restore keys. The `zk` CLI, the wasm bindings and the six-operation facade below all sit on the same code.
 
+## Predicates: prove facts about committed integers, no circuit needed
+
+```rust
+use zk_sdk::predicate::{Commitment, IntType, Predicate, Predicates};
+
+let (a, open_a) = Commitment::commit(IntType::U64, 700u32)?;     // publish `a`, keep `open_a`
+let (b, open_b) = Commitment::commit(IntType::U64, 690u32)?;
+let claim = Predicate::conserve(vec![a], vec![b], 10u8);         // 700 == 690 + fee 10
+let zk = Predicates::new();
+let proof = zk.prove(&claim, vec![open_a, open_b])?;
+zk.verify(&claim, &proof)?;                                      // needs only the claim and the proof
+```
+
+Opening, comparison, range, committed comparison, and exact-integer arithmetic (sums, balances, conservation with fees and explicit mint/burn, products, bounded division), over `u32 i32 u64 i64 u128 i128`, through Rust, the `zk predicate` CLI and the browser, with portable proofs verified across all of them. See [PREDICATES](docs/PREDICATES.md).
+
 ## Six operations
 
 | Method | Purpose |
@@ -73,6 +88,6 @@ Fast: layout, pinned revisions, `fmt`, `clippy -D warnings`, tests. Full adds th
 - `zk-sdk`: facade, `portable` byte API, native `files`
 - `zk-cli`: the `zk` binary
 - `zk-wasm`: wasm-bindgen exports
-- `web`: static browser demo; `circuits`, `testdata`: sources and compiled vectors
+- `web`: static browser demos (generic circuits and predicates); `circuits`, `testdata`: sources and compiled vectors
 
 [Architecture](docs/ARCHITECTURE.md) · [Development](docs/DEVELOPMENT.md) · [Security](docs/SECURITY.md) · [Progress](docs/PROGRESS.md) · [Roadmap](docs/ROADMAP.md)
