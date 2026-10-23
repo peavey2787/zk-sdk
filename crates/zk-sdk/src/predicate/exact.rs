@@ -113,6 +113,30 @@ impl Int {
         }
     }
 
+    pub(super) fn negate(&self) -> Self {
+        Self::new(!self.negative, self.magnitude.clone())
+    }
+
+    /// `self - other`.
+    pub(super) fn subtract(&self, other: &Self) -> Self {
+        self.add(&other.negate())
+    }
+
+    /// The magnitude as `count` little-endian 16-bit limbs; `None` when it needs more.
+    pub(super) fn limbs(&self, count: usize) -> Option<Vec<u64>> {
+        let halves: Vec<u64> = self
+            .magnitude
+            .iter()
+            .flat_map(|digit| [u64::from(*digit & 0xFFFF), u64::from(*digit >> 16)])
+            .collect();
+        let used = halves.iter().rposition(|h| *h != 0).map_or(0, |i| i + 1);
+        (used <= count).then(|| {
+            let mut limbs = halves;
+            limbs.resize(count, 0);
+            limbs
+        })
+    }
+
     pub(super) fn zero() -> Self {
         Self::new(false, Vec::new())
     }
@@ -170,6 +194,16 @@ mod tests {
         let square = max.mul(&max);
         assert_eq!(square.compare(&doubled), Ordering::Greater);
         assert_eq!(square.magnitude.len(), 8, "(2^128-1)^2 needs 256 bits");
+    }
+
+    #[test]
+    fn subtraction_and_limbs_are_exact() {
+        assert_eq!(int(3).subtract(&int(10)), int(-7));
+        assert_eq!(int(-4).subtract(&int(-4)), Int::zero());
+        let square = int(0x1_0001).mul(&int(0x1_0001));
+        assert_eq!(square.limbs(3), Some(vec![1, 2, 1]));
+        assert_eq!(square.limbs(2), None, "three limbs do not fit two");
+        assert_eq!(Int::zero().limbs(2), Some(vec![0, 0]));
     }
 
     #[test]

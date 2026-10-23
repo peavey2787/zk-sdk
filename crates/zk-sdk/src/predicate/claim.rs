@@ -164,6 +164,16 @@ pub enum Predicate {
         commitment: Commitment,
         set: SetCommitment,
     },
+    /// The committed point `(x, y)` is at Euclidean distance `op` `radius` from a public centre:
+    /// `(x - center_x)^2 + (y - center_y)^2  op  radius^2`, on exact integers.
+    Distance {
+        x: Commitment,
+        y: Commitment,
+        center_x: Number,
+        center_y: Number,
+        op: Op,
+        radius: Number,
+    },
 }
 
 impl Predicate {
@@ -341,6 +351,44 @@ impl Predicate {
     /// The committed value is not in `set` (prove with a path from `SetTree::absence_path`).
     pub fn not_member_of(commitment: Commitment, set: SetCommitment) -> Self {
         Self::Absent { commitment, set }
+    }
+
+    /// The committed point is within `radius` of `center` (inclusive).
+    pub fn within_distance(
+        x: Commitment,
+        y: Commitment,
+        center: (impl Into<Number>, impl Into<Number>),
+        radius: impl Into<Number>,
+    ) -> Self {
+        Self::distance(x, y, center, Op::Le, radius)
+    }
+
+    /// The committed point is farther than `radius` from `center`.
+    pub fn beyond_distance(
+        x: Commitment,
+        y: Commitment,
+        center: (impl Into<Number>, impl Into<Number>),
+        radius: impl Into<Number>,
+    ) -> Self {
+        Self::distance(x, y, center, Op::Gt, radius)
+    }
+
+    /// The distance from the committed point to `center` compares to `radius` by `op`.
+    pub fn distance(
+        x: Commitment,
+        y: Commitment,
+        center: (impl Into<Number>, impl Into<Number>),
+        op: Op,
+        radius: impl Into<Number>,
+    ) -> Self {
+        Self::Distance {
+            x,
+            y,
+            center_x: center.0.into(),
+            center_y: center.1.into(),
+            op,
+            radius: radius.into(),
+        }
     }
 
     pub fn to_json(&self) -> String {

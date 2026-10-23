@@ -15,7 +15,7 @@ const ZERO_DIGEST: [u64; 8] = [0; 8];
 
 /// A public constant must be a non-negative amount that fits the width of the committed type, so
 /// the constant folded into the sum can never exceed the limbs reserved for it.
-fn amount(ty: IntType, name: &str, number: Number) -> Result<u128> {
+pub(super) fn amount(ty: IntType, name: &str, number: Number) -> Result<u128> {
     IntType::new(ty.width, false).encode(number).map_err(|_| {
         ZkError::Predicate(format!(
             "{name} {number} is not an amount of {} bits",

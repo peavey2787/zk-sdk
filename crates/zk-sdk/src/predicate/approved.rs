@@ -95,6 +95,24 @@ pub(super) const BUNDLED: &[Bundled] = &[
         sha256: "4a836f8d799e90fa2c8b94f36dd867a8489bdc853415d0772138c9f36689c1d5",
     },
     Bundled {
+        name: "distance_128",
+        r1cs: include_bytes!("../../../../testdata/predicates/distance_128.r1cs"),
+        sym: include_str!("../../../../testdata/predicates/distance_128.sym"),
+        sha256: "d13daa59419835cf8616022f679758de94fb405f0579913fb3a26a4ba4aa0daf",
+    },
+    Bundled {
+        name: "distance_32",
+        r1cs: include_bytes!("../../../../testdata/predicates/distance_32.r1cs"),
+        sym: include_str!("../../../../testdata/predicates/distance_32.sym"),
+        sha256: "e79e6133f95b6b475a488f9f51a2539560642f28ace9129d62a64ba7f23429fd",
+    },
+    Bundled {
+        name: "distance_64",
+        r1cs: include_bytes!("../../../../testdata/predicates/distance_64.r1cs"),
+        sym: include_str!("../../../../testdata/predicates/distance_64.sym"),
+        sha256: "b1a45ac304860e5276f2ac7951a03b25b9ae5f691404442ce35eb967b6bcbd2e",
+    },
+    Bundled {
         name: "member20_128",
         r1cs: include_bytes!("../../../../testdata/predicates/member20_128.r1cs"),
         sym: include_str!("../../../../testdata/predicates/member20_128.sym"),

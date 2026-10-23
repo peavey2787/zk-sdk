@@ -18,9 +18,10 @@ Keep the facade at six operations. Mark a milestone done only when its acceptanc
 
 - [x] Merkle/set membership and non-membership (member and gap trees, depths 8 and 20, all six types): Rust, CLI, browser, native/WASM interop, differential-tested; publisher-honesty assumption documented.
 
+- [x] Private proximity/distance (committed 2D point vs public centre and radius, exact squares, all six types): Rust, browser, native/WASM interop, differential-tested.
+
 ## Next predicate families (in order; reuse the shared gadgets in `circuits/lib`)
 
-- [ ] Private proximity and distance.
 - [ ] Composition (`all`, `any`, constrained `not`) with shared-witness binding.
 - [ ] Credentials: knowledge, issuer-backed attributes (never confused with password knowledge), expiry, revocation.
 - [ ] Private state transitions with application-defined deterministic rules.

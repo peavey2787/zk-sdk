@@ -5,6 +5,7 @@
 use super::arithmetic;
 use super::claim::Predicate;
 use super::commit::Commitment;
+use super::distance;
 use super::int::{IntType, Number};
 use super::set::SetCommitment;
 use crate::{Result, ZkError};
@@ -267,6 +268,14 @@ impl Predicate {
             } => arithmetic::divide(*dividend, *divisor, *quotient, *remainder),
             Self::Member { commitment, set } => set_statement(commitment, set, false),
             Self::Absent { commitment, set } => set_statement(commitment, set, true),
+            Self::Distance {
+                x,
+                y,
+                center_x,
+                center_y,
+                op,
+                radius,
+            } => distance::statement(x, y, (*center_x, *center_y), *op, *radius),
         }
     }
 }

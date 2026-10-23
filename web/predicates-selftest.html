@@ -84,6 +84,17 @@ async function main() {
   checks.absent_accepted = absentProof !== null && (await accepts(absent, absentProof));
   checks.absent_for_a_member_unprovable = (await proves(buildClaim("absent", { setCommitment: setRoot }, [holder.commitment]), [holder.secret, await path("700", true)])) === null;
 
+  // Proximity: a committed point against a public centre and radius, on exact squares.
+  const px = await commit("i32", "3");
+  const py = await commit("i32", "-4");
+  const near = (radius, centerX = "0", op = "le") => buildClaim("distance", { centerX, centerY: "0", op, bound: radius }, [px.commitment, py.commitment]);
+  const nearProof = await proves(near("5"), [px.secret, py.secret]);
+  checks.distance_boundary_accepted = nearProof !== null && (await accepts(near("5"), nearProof));
+  checks.distance_rejects_other_radius = !(await accepts(near("6"), nearProof));
+  checks.distance_rejects_other_centre = !(await accepts(near("5", "1"), nearProof));
+  checks.distance_just_outside_unprovable = (await proves(near("4"), [px.secret, py.secret])) === null;
+  checks.distance_swapped_openings_unprovable = (await proves(near("5"), [py.secret, px.secret])) === null;
+
   const bad = geProof.slice();
   bad[bad.length >> 1] ^= 0x55;
   checks.rejects_corrupted_proof = !(await accepts(ge, bad));

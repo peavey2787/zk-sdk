@@ -22,7 +22,8 @@ Measured on Windows 11, native `x86_64-pc-windows-msvc`, rustc 1.98.1; wasm in h
 | Circuit reproducibility (`scripts/build_circuits.py --check`) | **In the full gate** | byte-identical rebuild on Windows; Linux result comes from CI |
 | Arithmetic and conservation: sums, balances, conservation (fees, mint/burn), products, bounded division, mixed public/private operands, six types | **Validated** | circuits vs unbounded-integer reference: `predicate/differential.rs` (5 suites x 40 rounds x 6 types, true and false cases); real proofs: `crates/zk-sdk/tests/arithmetic.rs` (14 tests incl. tampering, wrap-around, wrong openings); CLI e2e; browser self-test (22 checks, real in-browser proofs); native<->WASM interop for conserve/product/divide |
 | CI for `3623bc0` (previous milestone) | **Validated** | `validate` job green on ubuntu-latest and windows-latest (incl. Linux circuit reproducibility and interop); the separate `performance` job fails as before (latency gate, `continue-on-error`) |
-| Set/Merkle membership, proximity, credentials, state transitions, composition | **Not started** | |
+| Proximity/distance: committed 2D point vs public centre and radius, exact squares, six types | **Validated (Windows host)** | differential suite, `tests/distance.rs` real proofs, browser self-test, native<->WASM interop; performance section below |
+| Credentials, state transitions, composition | **Not started** | |
 
 ## Performance (Ryzen 7 5800X, Windows 11, default 116-bit full ZK, upstream parameters)
 
@@ -54,6 +55,10 @@ Constraints: `sum4` 7963 / 8403 / 12947, `sum8` 15487 / 16079 / 24591, `arith` 8
 Verify 33-75 ms. **Target status (optimized build):** only `conserve4_32` (331 ms) and `multiply_32` (492 ms) meet the 500 ms target; every other new circuit lands at 501-1041 ms, and `conserve8_128` (1041 ms) exceeds the 1000 ms ceiling. The portable build misses both targets everywhere (1.8-4.1 s). The machine was not quiet (the pre-existing circuits measured 1.0-1.5 s portable in this run versus 1.06-1.77 s before). These are performance misses, reported as such; no parameter was touched.
 
 **Browser (headless Chromium 155 via `scripts/browser_test.py predicates-perftest.html?n=3`, Worker, portable WASM, n=3 so p50 only; p95/p99 not reported).** Real in-browser proofs, all verified. Prove p50 (ms): opens 13774 / 11591 / 31137; compare 18787 / 15109 / 18975; range 20528 / 19173 / 19301; compare_committed 19211 / 17500 / 17356; conserve4 21417 / 36552 / 56188; conserve8 34948 / 22247 / 59065; multiply 34139 / 41410 / 31188; divide 52104 / 46448 / 29733 (32 / 64 / 128-bit). Verify 59-160 ms, proofs 0.63-0.97 MB, WASM memory up to 226 MiB, UI stall at most 5 ms. **Every circuit misses the 500 ms and 1000 ms browser targets by 10-60x**, the pre-existing four families included, and the run is far noisier than native (the same circuit varies 2x between first prove and p50). Timings were taken on a machine that was also doing other work during part of the run, so treat them as an upper bound, not a characterisation; the browser performance gap is open and is not closed by this milestone.
+
+### Proximity/distance circuits
+
+Constraints: `distance_32` 4787, `distance_64` 5755, `distance_128` 9715; the first two attain 116 bits, the 128-bit one needs the 115-bit opt-in. Verified by: the differential suite (`distances_agree_with_the_semantics`, boundary radii, all six types and operators), real proofs in `tests/distance.rs` (boundary, negative centre, widest u32 coordinates, tampered centre/radius/commitments, wrong openings), the browser self-test and the native/WASM interop matrix. Native **portable** build, 20 samples, same machine: p50 2.6 s (32), 2.2 s (64), 4.5 s (128); p95 4.0-6.7 s; verify 65-190 ms; proofs 0.82-0.88 MB. Far above the 500 ms / 1000 ms targets (a performance miss); the optimized (AVX2) native build and the browser were **not measured** for these circuits. No parameter was changed.
 
 ### Set membership and non-membership circuits
 

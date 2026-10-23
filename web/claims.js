@@ -12,6 +12,10 @@ export const FAMILIES = {
   total: { title: "Total of committed values vs a public bound", fields: ["inputs", "op", "bound"] },
   member: { title: "Committed value is in a published set", fields: ["valueA", "setValues"] },
   absent: { title: "Committed value is not in a published set", fields: ["valueA", "setValues"] },
+  distance: {
+    title: "Committed point (x, y) vs a public centre and radius",
+    fields: ["valueA", "valueB", "centerX", "centerY", "bound", "op"],
+  },
   arithmetic: { title: "Product: x * y + z (op) t", fields: ["op", "operands"], operands: ["x", "y", "z", "t"] },
   divide: {
     title: "Division: dividend = quotient * divisor + remainder",
@@ -36,6 +40,7 @@ export function privateValues(family, form) {
     case "divide":
       return form.operands.filter((o) => o.mode === "private").map((o) => o.value);
     case "compare_committed":
+    case "distance":
       return [form.valueA, form.valueB];
     default:
       return [form.valueA];
@@ -71,6 +76,11 @@ export function buildClaim(family, form, commitments) {
     }
     case "total":
       return { kind: "sum", plus: commitments, minus: [], plus_constant: "0", minus_constant: form.bound, op: form.op };
+    case "distance":
+      return {
+        kind: "distance", x: commitments[0], y: commitments[1], center_x: form.centerX,
+        center_y: form.centerY, op: form.op, radius: form.bound,
+      };
     case "member":
     case "absent":
       return { kind: family, commitment: commitments[0], set: form.setCommitment };

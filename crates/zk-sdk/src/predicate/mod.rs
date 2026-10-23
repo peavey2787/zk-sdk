@@ -21,6 +21,7 @@ mod claim;
 mod commit;
 #[cfg(test)]
 mod differential;
+mod distance;
 mod engine;
 mod exact;
 mod hash;

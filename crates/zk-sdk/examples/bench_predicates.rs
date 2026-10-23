@@ -1,4 +1,4 @@
-//! Per-predicate benchmark over the real library: `cargo run --release -p zk-sdk --example bench_predicates [samples]`.
+//! Per-predicate benchmark over the real library: `cargo run --release -p zk-sdk --example bench_predicates [samples] [family]`.
 //! Reports setup, prove (witness included) and verify quantiles plus proof size for each built-in
 //! circuit. Quantiles above the sample count's resolution are reported as `n/a`, not extrapolated.
 
@@ -21,6 +21,7 @@ fn main() -> zk_sdk::Result<()> {
         .nth(1)
         .and_then(|s| s.parse().ok())
         .unwrap_or(20);
+    let only = std::env::args().nth(2);
     println!(
         "threads={} samples={samples} (p95 needs >=20 samples, p99 needs >=100)",
         rayon_threads()
@@ -31,6 +32,9 @@ fn main() -> zk_sdk::Result<()> {
     );
     for (ty, label) in [(IntType::U32, 32), (IntType::U64, 64), (IntType::U128, 128)] {
         for (family, claim, openings, path) in cases(ty)? {
+            if only.as_deref().is_some_and(|name| name != family) {
+                continue;
+            }
             let zk = Predicates::new().with_minimum_bits(115); // the larger circuits attain 115 bits
             let started = Instant::now();
             zk.prove(&claim, witness(&openings, &path))?; // first call includes circuit load and setup
@@ -148,6 +152,14 @@ fn cases(ty: IntType) -> zk_sdk::Result<Vec<Case>> {
             None,
         ),
     ];
+    let (px, point_x) = Commitment::commit(ty, 3u8)?;
+    let (py, point_y) = Commitment::commit(ty, 4u8)?;
+    cases.push((
+        "distance",
+        Predicate::within_distance(px, py, (0u8, 0u8), 5u8),
+        vec![point_x, point_y],
+        None,
+    ));
     cases.extend(set_cases(ty, 100, 8)?);
     cases.extend(set_cases(ty, 300, 20)?);
     Ok(cases)

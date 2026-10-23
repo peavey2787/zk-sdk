@@ -65,6 +65,10 @@ async function measure(family, bits) {
     absent8: () => setClaim("absent", 8),
     member20: () => setClaim("member", 20),
     absent20: () => setClaim("absent", 20),
+    distance: async () => {
+      const v = await many(["3", "4"]);
+      return [buildClaim("distance", { centerX: "0", centerY: "0", op: "le", bound: "5" }, v.map((x) => x.commitment)), v];
+    },
     divide: async () => {
       const v = await many(["47", "5", "2"]);
       const form = { operands: [{ mode: "private", value: "" }, { mode: "public", value: "9" }, { mode: "private", value: "" }, { mode: "private", value: "" }] };
@@ -103,7 +107,7 @@ async function measure(family, bits) {
 
 async function main() {
   const results = {};
-  for (const family of ["opens", "compare", "range", "compare_committed", "conserve4", "conserve8", "multiply", "divide", "member8", "absent8", "member20", "absent20"]) {
+  for (const family of ["opens", "compare", "range", "compare_committed", "conserve4", "conserve8", "multiply", "divide", "distance", "member8", "absent8", "member20", "absent20"]) {
     for (const bits of [32, 64, 128]) results[`${family}_${bits}`] = await measure(family, bits);
   }
   const worst = Math.max(...Object.values(results).map((r) => r.p50_ms));

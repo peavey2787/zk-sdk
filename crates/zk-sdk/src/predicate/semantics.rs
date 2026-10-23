@@ -150,6 +150,24 @@ impl Predicate {
                 let remainder = values.operand(remainder)?;
                 division_refusal(&dividend, &divisor, &quotient, &remainder)
             }
+            Self::Distance {
+                center_x,
+                center_y,
+                op,
+                radius,
+                ..
+            } => {
+                let dx = values.committed()?.subtract(&Int::from(*center_x));
+                let dy = values.committed()?.subtract(&Int::from(*center_y));
+                let radius = Int::from(*radius);
+                let ordering = dx.mul(&dx).add(&dy.mul(&dy)).compare(&radius.mul(&radius));
+                refuse_unless(op.accepts(ordering), || {
+                    format!(
+                        "the squared distance {} the squared radius, which `{op:?}` does not accept",
+                        side(ordering)
+                    )
+                })
+            }
             Self::Member { set, .. } | Self::Absent { set, .. } => {
                 let value = values.0.next().ok_or_else(|| {
                     ZkError::Predicate("fewer opened values than committed terms".into())

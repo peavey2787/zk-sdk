@@ -276,6 +276,38 @@ fn divide_case(ty: IntType, rng: &mut Rng) -> Case {
     )
 }
 
+/// A committed point near a public centre, with a radius that is often exactly on the boundary.
+fn distance_case(ty: IntType, rng: &mut Rng) -> Case {
+    let reach = |rng: &mut Rng| small(ty, rng) % 1000;
+    let (cx, cy) = (small(ty, rng), small(ty, rng));
+    let (dx, dy) = (reach(rng), reach(rng));
+    let (x, y) = (cx + dx, cy + dy);
+    let exact = (dx * dx + dy * dy) as f64;
+    let radius = match rng.below(5) {
+        0 => exact.sqrt().floor() as i128,
+        1 => exact.sqrt().ceil() as i128,
+        2 => 0,
+        3 => i128::from(small(IntType::new(ty.width, false), rng).unsigned_abs() as u64),
+        _ => exact.sqrt().round() as i128 + 1,
+    };
+    let (x, y) = if rng.below(6) == 0 {
+        (any(ty, rng), any(ty, rng))
+    } else {
+        (Number::from(x), Number::from(y))
+    };
+    let (cx, cy) = (Number::from(cx), Number::from(cy));
+    let ((x, ox), (y, oy)) = (commit(ty, x, rng), commit(ty, y, rng));
+    Case::new(
+        Predicate::distance(x, y, (cx, cy), OPS[rng.below(6)], Number::from(radius)),
+        vec![ox, oy],
+    )
+}
+
+#[test]
+fn distances_agree_with_the_semantics() {
+    run("distance", 40, distance_case);
+}
+
 fn fits(ty: IntType, case: &Case) -> bool {
     case.claim.statement().is_ok() && case.openings.iter().all(|o| o.ty() == ty)
 }

@@ -111,6 +111,10 @@ def predicate_claims(c):
     )
     member = lambda root: f'{{"kind":"member","commitment":"{c["in2"]}","set":"{root}"}}'
     absent = lambda root: f'{{"kind":"absent","commitment":"{c["in1"]}","set":"{root}"}}'
+    distance = lambda radius: (
+        f'{{"kind":"distance","x":"{c["in2"]}","y":"{c["out2"]}","center_x":"0","center_y":"0",'
+        f'"op":"le","radius":"{radius}"}}'
+    )
     return {
         "member_u64": (member(c["set"]), member(c["other_set"]), ["in2", "member_path"]),
         "absent_u64": (absent(c["set"]), absent(c["other_set"]), ["in1", "absent_path"]),
@@ -121,6 +125,7 @@ def predicate_claims(c):
         "conserve_u64": (conserve(10), conserve(11), ["in1", "in2", "out1", "out2"]),
         "product_u64": (product(3), product(4), ["in2", "out2", "out1"]),
         "divide_u64": (divide(9), divide(10), ["rem_dividend", "quotient", "remainder"]),
+        "distance_u64": (distance(305), distance(300), ["in2", "out2"]),
     }
 
 

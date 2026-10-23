@@ -24,6 +24,7 @@ zk.verify(&claim, &proof)?;
 | Conservation | `conserve(inputs, outputs, fees)`, `conserve_with_supply(inputs, outputs, fees, minted, burned)` | `Σinputs (+ minted) == Σoutputs + fees (+ burned)`; mint and burn are explicit public amounts |
 | Product | `multiply(x, y, product)`, `arithmetic(x, y, z, op, t)` | `x·y + z op t` on exact integers; each operand is public (`3u8`) or committed |
 | Division | `divide(dividend, divisor, quotient, remainder)` | `dividend = quotient·divisor + remainder`, `divisor > 0`, `0 <= remainder < divisor` |
+| Distance | `within_distance(x, y, (cx, cy), r)`, `beyond_distance`, `distance(.., op, r)` | the committed point `(x, y)` satisfies `(x-cx)² + (y-cy)² op r²` on exact integers |
 | Set membership | `member_of(commitment, set)` | the committed value is in the published set; which member stays hidden |
 | Set non-membership | `not_member_of(commitment, set)` | the committed value is not in the published set |
 
@@ -44,6 +45,19 @@ zk.verify(&claim, &proof)?;
 - **Openings** are supplied in the order the committed values appear in the claim. For `sum` that is `plus` then `minus`; for `arithmetic` it is `x, y, z, t`; for `divide` it is `dividend, divisor, quotient, remainder` (public operands take no opening).
 - **Several owners.** One prover must hold every opening. If the secrets belong to different parties, they must first run a collaborative witness-generation protocol; this SDK does not provide one and does not pretend a single prover knows secrets it does not hold. `From<Vec<Opening>> for Witness` documents this.
 - **Attained security level.** Upstream refuses a 116-bit target for circuits above 8192 constraints (it supports at most 115 for them). `Predicates::new()` therefore **fails** (`ZkError::SecurityUnattainable`) for those circuits: the security level is never lowered silently. The caller opts in explicitly with `Predicates::new().with_minimum_bits(115)` (CLI `--min-bits 115`, WASM `predicate_set_minimum_bits(115)`, the demo's "Minimum security" selector). With that, a circuit runs at the highest level upstream accepts provided it is not below the stated minimum, and `Predicates::security_bits(circuit)` and `zk predicate describe` report it. `sum4_32` and the smaller circuits run at 116; the larger arithmetic circuits at 115. A verifier must be configured the same way: a proof made at 115 is refused by a 116-only verifier. This is a configured target, not a verified security level (see below).
+
+## Proximity and distance
+
+```rust
+let claim = Predicate::within_distance(x, y, (cx, cy), 500u32); // (x-cx)^2 + (y-cy)^2 <= 500^2
+let proof = zk.prove(&claim, vec![open_x, open_y])?;
+```
+
+- **Exact squares.** The circuit forms `|x-cx|` and `|y-cy|` exactly (offset-binary differences, no wrap), squares them from 8-bit digit products and compares the sum with `r²` limb by limb. There is no square root, rounding or modular arithmetic, so a point just outside the radius has no proof. Any of the six operators works (`within` is `<=`, `beyond` is `>`).
+- **What is hidden.** The point stays committed; the centre and radius are public. Coordinates are in one integer type (signed types give negative coordinates); the radius is a non-negative amount that fits that type's width.
+- **One dimension** is already `in_range` (or `compare_committed` on a difference); this family is the two-dimensional Euclidean case.
+- **Openings** are `x` then `y`. Open coordinates in different units or types are rejected.
+- **Security level.** `distance_32` (4787 constraints) and `distance_64` (5755) attain 116 bits; `distance_128` (9715) exceeds 8192 constraints and needs the explicit 115-bit opt-in like the larger arithmetic circuits.
 
 ## Sets: membership and non-membership
 
@@ -72,6 +86,7 @@ zk.verify(&claim, &proof)?;
 {"kind":"sum","plus":["u64:..","u64:.."],"minus":["u64:..","u64:.."],"plus_constant":"0","minus_constant":"10","op":"eq"}
 {"kind":"arithmetic","x":"u64:..","y":"3","z":"0","t":"u64:..","op":"eq"}
 {"kind":"divide","dividend":"u64:..","divisor":"9","quotient":"u64:..","remainder":"u64:.."}
+{"kind":"distance","x":"i32:..","y":"i32:..","center_x":"0","center_y":"0","op":"le","radius":"5"}
 {"kind":"member","commitment":"u64:..","set":"set:u64:8:<128 hex>"}
 {"kind":"absent","commitment":"u64:..","set":"set:u64:8:<128 hex>"}
 ```
