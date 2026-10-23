@@ -29,7 +29,7 @@ fn main() -> zk_sdk::Result<()> {
     );
     for (ty, label) in [(IntType::U32, 32), (IntType::U64, 64), (IntType::U128, 128)] {
         for (family, claim, openings) in cases(ty)? {
-            let zk = Predicates::new();
+            let zk = Predicates::new().with_minimum_bits(115); // the larger circuits attain 115 bits
             let started = Instant::now();
             zk.prove(&claim, witness(&openings))?; // first call includes circuit load and setup
             let setup_ms = started.elapsed().as_secs_f64() * 1e3;

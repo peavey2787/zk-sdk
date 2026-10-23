@@ -1,5 +1,7 @@
 //! Thin wasm-bindgen layer over `zk_sdk::portable`. Every byte stays in the browser: there is no
 //! network access here, and the heavy calls are meant to run inside a Web Worker.
+use std::cell::RefCell;
+
 use wasm_bindgen::prelude::*;
 use zk_sdk::predicate::{self, Predicates};
 use zk_sdk::{portable, SecurityPolicy, Zk};
@@ -87,7 +89,20 @@ pub fn describe(proof: &[u8]) -> Result<String, JsError> {
 thread_local! {
     // Built-in predicate circuits are loaded and keyed on first use, then kept warm for the
     // lifetime of the worker.
-    static PREDICATES: Predicates = Predicates::new();
+    static PREDICATES: RefCell<Predicates> = RefCell::new(Predicates::new());
+}
+
+/// Authorize circuits that cannot reach the 116-bit default to run at the highest level they
+/// attain, never below `bits` (the larger arithmetic circuits attain 115). Discards keys cached at
+/// any other level (repeating the same value keeps them); without a call these circuits fail.
+#[wasm_bindgen]
+pub fn predicate_set_minimum_bits(bits: u16) {
+    PREDICATES.with(|zk| {
+        let wanted = Predicates::new().with_minimum_bits(bits);
+        if zk.borrow().minimum_bits() != wanted.minimum_bits() {
+            *zk.borrow_mut() = wanted;
+        }
+    });
 }
 
 /// A fresh commitment as JSON `{"commitment","secret"}`: publish the first, keep the second.
@@ -100,7 +115,7 @@ pub fn predicate_commit(int_type: &str, value: &str) -> Result<String, JsError> 
 #[wasm_bindgen]
 pub fn predicate_prove(claim_json: &str, secrets: Vec<String>) -> Result<Vec<u8>, JsError> {
     PREDICATES
-        .with(|zk| predicate::prove(zk, claim_json, &secrets))
+        .with(|zk| predicate::prove(&zk.borrow(), claim_json, &secrets))
         .map_err(js)
 }
 
@@ -108,13 +123,13 @@ pub fn predicate_prove(claim_json: &str, secrets: Vec<String>) -> Result<Vec<u8>
 #[wasm_bindgen]
 pub fn predicate_verify(claim_json: &str, proof: &[u8]) -> Result<(), JsError> {
     PREDICATES
-        .with(|zk| predicate::verify(zk, claim_json, proof))
+        .with(|zk| predicate::verify(&zk.borrow(), claim_json, proof))
         .map_err(js)
 }
 
 #[wasm_bindgen]
 pub fn predicate_describe(claim_json: &str) -> Result<String, JsError> {
     PREDICATES
-        .with(|zk| predicate::describe(zk, claim_json))
+        .with(|zk| predicate::describe(&zk.borrow(), claim_json))
         .map_err(js)
 }

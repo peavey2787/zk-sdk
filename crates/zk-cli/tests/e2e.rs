@@ -316,6 +316,8 @@ mod predicates {
             &secrets,
             "--proof",
             path(&proof),
+            "--min-bits",
+            "115",
         ]);
         ok(&[
             "verify",
@@ -323,8 +325,28 @@ mod predicates {
             path(&claim_file),
             "--proof",
             path(&proof),
+            "--min-bits",
+            "115",
         ]);
-        let described = run(&["describe", "--claim", path(&claim_file)]);
+        let strict = run(&[
+            "verify",
+            "--claim",
+            path(&claim_file),
+            "--proof",
+            path(&proof),
+        ]);
+        assert!(
+            !strict.status.success(),
+            "no --min-bits, no 115-bit circuit"
+        );
+        assert!(String::from_utf8_lossy(&strict.stderr).contains("can attain at most 115"));
+        let described = run(&[
+            "describe",
+            "--claim",
+            path(&claim_file),
+            "--min-bits",
+            "115",
+        ]);
         assert!(String::from_utf8_lossy(&described.stdout).starts_with("sum4_64 115-bit"));
         let unbalanced = claim(dir.path(), "u", &conserve(11));
         assert!(!run(&[
@@ -332,7 +354,9 @@ mod predicates {
             "--claim",
             path(&unbalanced),
             "--proof",
-            path(&proof)
+            path(&proof),
+            "--min-bits",
+            "115"
         ])
         .status
         .success());
@@ -344,7 +368,9 @@ mod predicates {
             "--secrets",
             &secrets,
             "--proof",
-            path(&refused)
+            path(&refused),
+            "--min-bits",
+            "115"
         ])
         .status
         .success());
@@ -357,7 +383,9 @@ mod predicates {
             "--secrets",
             short,
             "--proof",
-            path(&refused)
+            path(&refused),
+            "--min-bits",
+            "115"
         ])
         .status
         .success());

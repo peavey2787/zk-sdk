@@ -46,6 +46,11 @@ responsive during multi-second proofs. Private values never leave this tab. Back
 
 <fieldset>
   <legend>Commit, prove, verify</legend>
+  <label>Minimum security
+    <select id="minBits">
+      <option value="116" selected>116 bits (default; larger circuits such as conservation are refused)</option>
+      <option value="115">115 bits (explicitly allow circuits that cannot reach 116)</option>
+    </select></label>
   <div class="row">
     <button id="commit">1. Commit</button>
     <button id="prove">2. Prove locally</button>

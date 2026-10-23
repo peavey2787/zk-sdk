@@ -10,6 +10,7 @@ import { buildClaim } from "./claims.js";
 import { JobRunner } from "./job-runner.js";
 
 const runner = new JobRunner("./worker.js");
+await runner.run("predicateMinimumBits", { bits: 115 }); // explicit: large circuits attain 115
 const commit = async (type, value) => JSON.parse((await runner.run("predicateCommit", { type, value })).result);
 const accepts = (claim, proof) => runner.run("predicateVerify", { claim: JSON.stringify(claim), proof }).then(() => true, () => false);
 const proves = (claim, secrets) => runner.run("predicateProve", { claim: JSON.stringify(claim), secrets }).then((r) => r.result, () => null);

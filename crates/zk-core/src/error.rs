@@ -11,7 +11,7 @@ pub enum ZkError {
     #[error("security configuration rejected: {0}")]
     Policy(String),
     #[error(
-        "requested {requested} bits of security, but this circuit can attain at most {attainable}"
+        "requested {requested} bits of security, but this circuit can attain at most {attainable}; \na lower level is used only if the caller explicitly lowers the minimum"
     )]
     SecurityUnattainable { requested: u16, attainable: u16 },
     #[error("backend unavailable: {0}")]

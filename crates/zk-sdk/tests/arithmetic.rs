@@ -7,9 +7,14 @@ use std::sync::OnceLock;
 
 use zk_sdk::predicate::{Commitment, IntType, Number, Op, Opening, Predicate, Predicates};
 
+/// The larger circuits attain 115 bits at most; this opt-in is the only way to run them.
+fn authorized() -> Predicates {
+    Predicates::new().with_minimum_bits(115)
+}
+
 fn zk() -> &'static Predicates {
     static ZK: OnceLock<Predicates> = OnceLock::new();
-    ZK.get_or_init(Predicates::new)
+    ZK.get_or_init(authorized)
 }
 
 fn commit(ty: IntType, value: impl Into<Number>) -> (Commitment, Opening) {
@@ -21,7 +26,7 @@ fn holds(claim: &Predicate, openings: Vec<Opening>) -> zk_sdk::predicate::Predic
     let proof = zk()
         .prove(claim, openings)
         .unwrap_or_else(|e| panic!("{claim:?}: {e}"));
-    Predicates::new()
+    authorized()
         .verify(claim, &proof)
         .unwrap_or_else(|e| panic!("{claim:?}: {e}"));
     proof
@@ -50,7 +55,7 @@ fn conservation_with_fees_across_every_type() {
         let (d, od) = commit(ty, 30u32);
         let claim = Predicate::conserve(vec![a, b], vec![c, d], 10u8);
         let proof = holds(&claim, vec![oa, ob, oc, od]);
-        let verifier = Predicates::new();
+        let verifier = authorized();
         assert!(verifier
             .verify(&Predicate::conserve(vec![a, b], vec![c, d], 11u8), &proof)
             .is_err());
@@ -227,7 +232,7 @@ fn tampered_claims_and_proofs_are_rejected() {
     let (c, oc) = commit(IntType::U64, 3u8);
     let claim = Predicate::subtract(a, b, c);
     let proof = holds(&claim, vec![oa.clone(), ob.clone(), oc.clone()]);
-    let verifier = Predicates::new();
+    let verifier = authorized();
     assert!(verifier
         .verify(&Predicate::subtract(a, c, b), &proof)
         .is_err());
@@ -311,4 +316,25 @@ fn false_claims_say_why() {
     );
     let message = reason(&Predicate::divide(a, 0u8, b, 0u8), vec![oa, ob]);
     assert!(message.contains("divisor must be positive"), "{message}");
+}
+
+#[test]
+fn lower_security_needs_explicit_authorization() {
+    let (a, oa) = commit(IntType::U64, 5u8);
+    let (b, ob) = commit(IntType::U64, 4u8);
+    let claim = Predicate::conserve(vec![a], vec![b], 1u8);
+    let strict = Predicates::new();
+    assert!(matches!(
+        strict.prove(&claim, vec![oa.clone(), ob.clone()]),
+        Err(zk_sdk::ZkError::SecurityUnattainable {
+            requested: 116,
+            attainable: 115
+        })
+    ));
+    let too_high = Predicates::new().with_minimum_bits(116);
+    assert!(too_high
+        .prove(&claim, vec![oa.clone(), ob.clone()])
+        .is_err());
+    let proof = holds(&claim, vec![oa, ob]);
+    assert!(strict.verify(&claim, &proof).is_err());
 }

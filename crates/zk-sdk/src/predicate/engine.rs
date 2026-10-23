@@ -68,6 +68,7 @@ struct Entry {
 
 pub struct Predicates {
     policy: SecurityPolicy,
+    floor: u16,
     entries: Mutex<HashMap<String, Arc<Entry>>>,
 }
 
@@ -78,9 +79,10 @@ impl Default for Predicates {
 }
 
 impl Predicates {
-    /// Spartan-WHIR, full zero knowledge, targeting the default 116-bit policy. A circuit whose
-    /// size upstream cannot support at that target is set up at the highest level it can attain
-    /// instead (never below the backend minimum); [`Predicates::security_bits`] reports it.
+    /// Spartan-WHIR, full zero knowledge, at the default 116-bit policy and no lower: a circuit
+    /// whose size upstream cannot support at that target fails with
+    /// [`ZkError::SecurityUnattainable`] unless the caller authorizes a lower level with
+    /// [`Predicates::with_minimum_bits`].
     pub fn new() -> Self {
         Self::with_policy(SecurityPolicy::default())
     }
@@ -88,22 +90,37 @@ impl Predicates {
     pub fn with_policy(policy: SecurityPolicy) -> Self {
         Self {
             policy,
+            floor: policy.bits,
             entries: Mutex::default(),
         }
     }
 
+    /// Explicitly authorize circuits upstream can only set up below the policy's target to run
+    /// at the highest level they attain, provided it is at least `bits`. Nothing below `bits` is
+    /// ever used, and a proof made at one level is refused by a verifier configured for another.
+    pub fn with_minimum_bits(mut self, bits: u16) -> Self {
+        self.floor = bits.min(self.policy.bits);
+        self
+    }
+
+    /// The lowest level this engine will run any circuit at.
+    pub fn minimum_bits(&self) -> u16 {
+        self.floor
+    }
+
     /// The target security level in bits that `circuit` is actually set up at: the policy's, or
-    /// the most upstream attains for that circuit's size when that is lower. Soundness of the
-    /// composed proof system remains unverified end to end.
+    /// the most upstream attains for that circuit's size when the caller authorized that lower
+    /// level. Soundness of the composed proof system remains unverified end to end.
     pub fn security_bits(&self, circuit: &str) -> Result<u16> {
         Ok(self.entry(circuit)?.bits)
     }
 
-    /// Keys at the policy, or at the level upstream says this circuit can attain.
+    /// Keys at the policy, or at the level upstream says this circuit can attain when that is
+    /// not below the authorized minimum.
     fn setup(&self, compiled: &CompiledCircuit) -> Result<(Zk, KeyPair)> {
         let zk = Zk::spartan_whir().with_policy(self.policy);
         match zk.setup(compiled) {
-            Err(ZkError::SecurityUnattainable { attainable, .. }) => {
+            Err(ZkError::SecurityUnattainable { attainable, .. }) if attainable >= self.floor => {
                 let zk = Zk::spartan_whir().with_policy(self.policy.with_bits(attainable));
                 let keys = zk.setup(compiled)?;
                 Ok((zk, keys))

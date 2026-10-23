@@ -19,6 +19,7 @@ const operations = {
   describe: ({ proof }) => zk.describe(proof),
   // Built-in predicates: no circuit, key or setup handling on the page.
   predicateCommit: ({ type, value }) => zk.predicate_commit(type, value),
+  predicateMinimumBits: ({ bits }) => zk.predicate_set_minimum_bits(bits),
   predicateProve: ({ claim, secrets }) => zk.predicate_prove(claim, secrets),
   predicateVerify: ({ claim, proof }) => {
     zk.predicate_verify(claim, proof);

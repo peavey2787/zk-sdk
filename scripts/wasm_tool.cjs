@@ -5,6 +5,10 @@ const zk = require(process.argv[2]);
 const [command, ...args] = process.argv.slice(3);
 const read = (path) => new Uint8Array(fs.readFileSync(path));
 
+const authorize = () => {
+  if (process.env.ZK_MIN_BITS) zk.predicate_set_minimum_bits(Number(process.env.ZK_MIN_BITS));
+};
+
 const commands = {
   setup: ([r1cs, pk, vk]) => {
     const keys = zk.setup(read(r1cs), 116, "johnson");
@@ -24,11 +28,14 @@ const commands = {
     fs.writeFileSync(commitment, made.commitment);
     fs.writeFileSync(secret, made.secret);
   },
+  // ZK_MIN_BITS is the explicit authorization to run circuits below the 116-bit default.
   "predicate-prove": ([claim, proof, ...secrets]) => {
+    authorize();
     const texts = secrets.map((path) => fs.readFileSync(path, "utf8"));
     fs.writeFileSync(proof, zk.predicate_prove(fs.readFileSync(claim, "utf8"), texts));
   },
   "predicate-verify": ([claim, proof]) => {
+    authorize();
     zk.predicate_verify(fs.readFileSync(claim, "utf8"), read(proof));
   },
 };

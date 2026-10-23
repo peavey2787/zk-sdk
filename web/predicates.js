@@ -94,8 +94,12 @@ async function commit() {
   log(`committed ${values.length} value(s); the claim is public, the secrets stay in this tab`, "good");
 }
 
+// The worker is respawned on cancel, so the chosen minimum travels with every job that needs it.
+const authorize = () => runner.run("predicateMinimumBits", { bits: Number($("minBits").value) });
+
 async function prove() {
   if (!state.secrets.length) throw new Error("commit first");
+  await authorize();
   const { result, ms, wasmBytes } = await runner.run("predicateProve", { claim: $("claim").value, secrets: state.secrets });
   state.proof = result;
   show("t-prove", ms);
@@ -107,6 +111,7 @@ async function prove() {
 async function verify() {
   if (!state.proof) throw new Error("need a proof (prove or import)");
   try {
+    await authorize();
     const { ms } = await runner.run("predicateVerify", { claim: $("claim").value, proof: state.proof });
     show("t-verify", ms);
     log("ACCEPTED: the proof is valid for exactly this claim", "good");

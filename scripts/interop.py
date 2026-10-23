@@ -1,5 +1,6 @@
 """Cross-backend interop matrix: native (zk CLI) and WebAssembly (Node) produce and verify each other's artifacts."""
 import itertools
+import os
 import shutil
 import subprocess
 import sys
@@ -53,13 +54,13 @@ class Backend:
 
     def predicate_prove(self, claim, proof, secrets):
         if self.name == "native":
-            run([CLI, "predicate", "prove", "--claim", claim, "--secrets", ",".join(str(secret) for secret in secrets), "--proof", proof])
+            run([CLI, "predicate", "prove", "--claim", claim, "--secrets", ",".join(str(secret) for secret in secrets), "--proof", proof, "--min-bits", "115"])
         else:
             run(["node", TOOL, NODE_PKG, "predicate-prove", claim, proof, *secrets])
 
     def predicate_verify(self, claim, proof, ok=True):
         if self.name == "native":
-            run([CLI, "predicate", "verify", "--claim", claim, "--proof", proof], expect_ok=ok)
+            run([CLI, "predicate", "verify", "--claim", claim, "--proof", proof, "--min-bits", "115"], expect_ok=ok)
         else:
             run(["node", TOOL, NODE_PKG, "predicate-verify", claim, proof], expect_ok=ok)
 
@@ -108,6 +109,7 @@ def predicate_claims(c):
 
 
 def predicate_matrix(backends, tmp):
+    os.environ["ZK_MIN_BITS"] = "115"  # explicit: the larger arithmetic circuits attain 115 bits
     makers = itertools.cycle(backends.values())
     specs = {"age": ("u32", "20"), "wide": ("i128", "-7"), "low": ("i64", "-3"), "high": ("i64", "9"),
              "in1": ("u64", "700"), "in2": ("u64", "300"), "out1": ("u64", "960"), "out2": ("u64", "30"),

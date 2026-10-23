@@ -14,6 +14,7 @@ import { JobRunner } from "./job-runner.js";
 const SAMPLES = Number(new URLSearchParams(location.search).get("n") ?? 5);
 const TARGET_MS = 500, CEILING_MS = 1000;
 const runner = new JobRunner("./worker.js");
+await runner.run("predicateMinimumBits", { bits: 115 }); // explicit: large circuits attain 115
 const types = { 32: "u32", 64: "u64", 128: "u128" };
 
 const quantile = (sorted, q, minimum) =>
