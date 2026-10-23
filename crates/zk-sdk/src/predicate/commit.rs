@@ -6,30 +6,18 @@
 //! agree. Commitments are binding up to the sponge's collision resistance (about 2^124 over eight
 //! 31-bit elements) and hiding while the blinding stays secret and uniformly random.
 
-use std::sync::OnceLock;
-
-use p3_field::{PrimeCharacteristicRing, PrimeField32};
-use p3_koala_bear::{default_koalabear_poseidon2_16, KoalaBear, Poseidon2KoalaBear};
-use p3_symmetric::Permutation;
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroize;
 
+pub use super::hash::DIGEST_ELEMENTS;
+pub(super) use super::hash::FIELD_MODULUS;
+use super::hash::{sponge, Digest, COMMIT_DOMAIN};
 use super::int::{IntType, Number};
 use crate::{Result, ZkError};
 
-pub(super) const FIELD_MODULUS: u32 = 0x7f00_0001;
-const COMMIT_DOMAIN: u32 = 1_514_344_449;
-const RATE: usize = 8;
-const WIDTH: usize = 16;
 pub const BLINDING_ELEMENTS: usize = 8;
-pub const DIGEST_ELEMENTS: usize = 8;
 
 type Blinding = [u32; BLINDING_ELEMENTS];
-type Digest = [u32; DIGEST_ELEMENTS];
-
-fn permutation() -> &'static Poseidon2KoalaBear<WIDTH> {
-    static PERMUTATION: OnceLock<Poseidon2KoalaBear<WIDTH>> = OnceLock::new();
-    PERMUTATION.get_or_init(default_koalabear_poseidon2_16)
-}
 
 fn message(ty: IntType, encoded: u128, blinding: &Blinding) -> Vec<u32> {
     let limbs = ty.limbs(encoded);
@@ -40,17 +28,7 @@ fn message(ty: IntType, encoded: u128, blinding: &Blinding) -> Vec<u32> {
 }
 
 fn digest(ty: IntType, encoded: u128, blinding: &Blinding) -> Digest {
-    let message = message(ty, encoded, blinding);
-    let mut state = [KoalaBear::ZERO; WIDTH];
-    state[RATE] = KoalaBear::new(COMMIT_DOMAIN);
-    state[RATE + 1] = KoalaBear::new(message.len() as u32);
-    for block in message.chunks(RATE) {
-        for (slot, value) in state.iter_mut().zip(block) {
-            *slot += KoalaBear::new(*value);
-        }
-        permutation().permute_mut(&mut state);
-    }
-    std::array::from_fn(|i| state[i].as_canonical_u32())
+    sponge(COMMIT_DOMAIN, &message(ty, encoded, blinding))
 }
 
 /// Uniform field elements by rejection sampling over the OS (or browser) CSPRNG.
@@ -79,12 +57,27 @@ pub struct Commitment {
 }
 
 /// The secret behind a [`Commitment`]: the value and its blinding. Never log or transmit it; the
-/// `Debug` output is redacted. Browser and process memory are not zeroized.
+/// `Debug` output is redacted. The value and blinding are overwritten when the opening is dropped
+/// (best effort: copies the compiler or allocator made earlier, and the browser's JavaScript
+/// strings, are outside Rust's reach; see docs/SECURITY.md).
 #[derive(Clone, PartialEq, Eq)]
 pub struct Opening {
     ty: IntType,
     value: Number,
     blinding: Blinding,
+}
+
+impl Zeroize for Opening {
+    fn zeroize(&mut self) {
+        self.value.zeroize();
+        self.blinding.zeroize();
+    }
+}
+
+impl Drop for Opening {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
 }
 
 impl std::fmt::Debug for Opening {
@@ -226,6 +219,12 @@ impl Opening {
             value: String,
             blinding: Blinding,
         }
+        impl Drop for Secret {
+            fn drop(&mut self) {
+                self.value.zeroize();
+                self.blinding.zeroize();
+            }
+        }
         let secret: Secret =
             serde_json::from_str(text).map_err(|e| ZkError::Format(e.to_string()))?;
         let ty: IntType = secret.r#type.parse()?;
@@ -249,6 +248,18 @@ mod tests {
     use super::*;
 
     const BLIND: Blinding = [1, 2, 3, 4, 5, 6, 7, 8];
+
+    #[test]
+    fn zeroizing_an_opening_destroys_the_secret() {
+        let (commitment, mut opening) =
+            Commitment::commit_with_blinding(IntType::U64, 18u64, BLIND).unwrap();
+        assert!(opening.opens(&commitment));
+        opening.zeroize();
+        assert_eq!(opening.value(), Number::default());
+        assert_eq!(opening.blinding(), &[0; BLINDING_ELEMENTS]);
+        assert!(!opening.opens(&commitment));
+        assert!(!opening.to_secret_json().contains("18"));
+    }
 
     #[test]
     fn deterministic_and_binding_to_every_input() {

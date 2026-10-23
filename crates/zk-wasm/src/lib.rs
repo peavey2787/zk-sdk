@@ -111,11 +111,29 @@ pub fn predicate_commit(int_type: &str, value: &str) -> Result<String, JsError> 
     Ok(predicate::commit(int_type, value).map_err(js)?.to_json())
 }
 
-/// Prove a JSON claim with one secret per commitment, in claim order.
+/// The public commitment of the set of decimal strings in the JSON array `values_json`.
+#[wasm_bindgen]
+pub fn predicate_set_commitment(int_type: &str, values_json: &str) -> Result<String, JsError> {
+    predicate::set_commitment(int_type, values_json).map_err(js)
+}
+
+/// The private Merkle path (JSON) proving `value` is in the set, or with `absent` that it is not.
+#[wasm_bindgen]
+pub fn predicate_set_path(
+    int_type: &str,
+    values_json: &str,
+    value: &str,
+    absent: bool,
+) -> Result<String, JsError> {
+    predicate::set_path(int_type, values_json, value, absent).map_err(js)
+}
+
+/// Prove a JSON claim with one secret per commitment, in claim order; a set claim takes its
+/// Merkle path as one more, final secret.
 #[wasm_bindgen]
 pub fn predicate_prove(claim_json: &str, secrets: Vec<String>) -> Result<Vec<u8>, JsError> {
     PREDICATES
-        .with(|zk| predicate::prove(&zk.borrow(), claim_json, &secrets))
+        .with(|zk| predicate::prove(&zk.borrow(), claim_json, secrets))
         .map_err(js)
 }
 

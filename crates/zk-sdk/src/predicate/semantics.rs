@@ -11,6 +11,7 @@ use std::slice::Iter;
 use super::claim::{Operand, Predicate};
 use super::exact::Int;
 use super::int::Number;
+use super::set::{self, SetPath};
 use crate::{Result, ZkError};
 
 /// The opened values in witness order, consumed as the claim's committed positions are visited.
@@ -61,9 +62,9 @@ fn side(ordering: Ordering) -> &'static str {
 impl Predicate {
     /// `None` when the claim is true for the committed positions' `values` (in witness order),
     /// otherwise why it is false.
-    pub(super) fn refusal(&self, values: &[Number]) -> Result<Refusal> {
+    pub(super) fn refusal(&self, values: &[Number], path: Option<&SetPath>) -> Result<Refusal> {
         let mut values = Values(values.iter());
-        let verdict = self.evaluate(&mut values)?;
+        let verdict = self.evaluate(&mut values, path)?;
         if values.finished() {
             Ok(verdict)
         } else {
@@ -73,7 +74,7 @@ impl Predicate {
         }
     }
 
-    fn evaluate(&self, values: &mut Values) -> Result<Refusal> {
+    fn evaluate(&self, values: &mut Values, path: Option<&SetPath>) -> Result<Refusal> {
         Ok(match self {
             Self::Opens { .. } => values.committed().map(|_| None)?,
             Self::Compare { op, bound, .. } => {
@@ -149,6 +150,13 @@ impl Predicate {
                 let remainder = values.operand(remainder)?;
                 division_refusal(&dividend, &divisor, &quotient, &remainder)
             }
+            Self::Member { set, .. } | Self::Absent { set, .. } => {
+                let value = values.0.next().ok_or_else(|| {
+                    ZkError::Predicate("fewer opened values than committed terms".into())
+                })?;
+                let absent = matches!(self, Self::Absent { .. });
+                set::refusal(set, absent, set.ty().encode(*value)?, path)?
+            }
         })
     }
 }
@@ -171,13 +179,19 @@ fn division_refusal(dividend: &Int, divisor: &Int, quotient: &Int, remainder: &I
 #[cfg(test)]
 impl Predicate {
     /// Whether the claim is true for `values`, in witness order.
-    pub(super) fn holds(&self, values: &[Number]) -> Result<bool> {
-        self.refusal(values).map(|reason| reason.is_none())
+    pub(super) fn holds(&self, values: &[Number], path: Option<&SetPath>) -> Result<bool> {
+        self.refusal(values, path).map(|reason| reason.is_none())
     }
 }
 
 #[cfg(test)]
 mod tests {
+    impl Predicate {
+        fn holds_plain(&self, values: &[Number]) -> Result<bool> {
+            self.holds(values, None)
+        }
+    }
+
     use super::*;
     use crate::predicate::commit::Commitment;
     use crate::predicate::int::IntType;
@@ -198,14 +212,16 @@ mod tests {
         let claim = Predicate::conserve(vec![c, c], vec![c, c], 5);
         let near_max = i128::MAX;
         assert!(claim
-            .holds(&numbers(&[near_max, near_max, near_max, near_max - 5]))
+            .holds_plain(&numbers(&[near_max, near_max, near_max, near_max - 5]))
             .unwrap());
         assert!(!claim
-            .holds(&numbers(&[near_max, near_max, near_max, near_max]))
+            .holds_plain(&numbers(&[near_max, near_max, near_max, near_max]))
             .unwrap());
         let wrap = Predicate::sum_equals(vec![c, c], c);
         assert!(
-            !wrap.holds(&numbers(&[i128::MAX, 1, i128::MIN])).unwrap(),
+            !wrap
+                .holds_plain(&numbers(&[i128::MAX, 1, i128::MIN]))
+                .unwrap(),
             "2^127 - 1 + 1 is 2^127, not the wrapped -2^127"
         );
     }
@@ -214,27 +230,29 @@ mod tests {
     fn products_and_division_follow_the_stated_rules() {
         let c = commitment();
         let product = Predicate::multiply(c, c, c);
-        assert!(product.holds(&numbers(&[-6, 7, -42])).unwrap());
-        assert!(!product.holds(&numbers(&[6, 7, 43])).unwrap());
+        assert!(product.holds_plain(&numbers(&[-6, 7, -42])).unwrap());
+        assert!(!product.holds_plain(&numbers(&[6, 7, 43])).unwrap());
         let wide = Predicate::multiply(c, c, c);
-        assert!(!wide.holds(&numbers(&[1 << 100, 1 << 100, 0])).unwrap());
+        assert!(!wide
+            .holds_plain(&numbers(&[1 << 100, 1 << 100, 0]))
+            .unwrap());
         let divide = Predicate::divide(c, c, c, c);
         // Values in claim order: dividend, divisor, quotient, remainder.
-        assert!(divide.holds(&numbers(&[-10, 3, -4, 2])).unwrap());
+        assert!(divide.holds_plain(&numbers(&[-10, 3, -4, 2])).unwrap());
         assert!(
-            !divide.holds(&numbers(&[-10, 3, -3, -1])).unwrap(),
+            !divide.holds_plain(&numbers(&[-10, 3, -3, -1])).unwrap(),
             "remainder < 0"
         );
         assert!(
-            !divide.holds(&numbers(&[12, 3, 3, 3])).unwrap(),
+            !divide.holds_plain(&numbers(&[12, 3, 3, 3])).unwrap(),
             "remainder == divisor"
         );
         assert!(
-            !divide.holds(&numbers(&[0, 0, 0, 0])).unwrap(),
+            !divide.holds_plain(&numbers(&[0, 0, 0, 0])).unwrap(),
             "division by zero"
         );
         assert!(
-            !divide.holds(&numbers(&[14, -3, -4, 2])).unwrap(),
+            !divide.holds_plain(&numbers(&[14, -3, -4, 2])).unwrap(),
             "negative divisor"
         );
     }
@@ -242,7 +260,7 @@ mod tests {
     #[test]
     fn wrong_value_counts_are_errors() {
         let c = commitment();
-        assert!(Predicate::opens(c).holds(&[]).is_err());
-        assert!(Predicate::opens(c).holds(&numbers(&[1, 2])).is_err());
+        assert!(Predicate::opens(c).holds_plain(&[]).is_err());
+        assert!(Predicate::opens(c).holds_plain(&numbers(&[1, 2])).is_err());
     }
 }

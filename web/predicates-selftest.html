@@ -67,6 +67,23 @@ async function main() {
   checks.division_accepted = divisionProof !== null && (await accepts(division, divisionProof));
   checks.division_rejects_other_divisor = !(await accepts(buildClaim("divide", { operands: [{ mode: "private", value: "" }, { mode: "public", value: "8" }, { mode: "private", value: "" }, { mode: "private", value: "" }] }, [dividend.commitment, quotient.commitment, remainder.commitment]), divisionProof));
 
+  // Sets: Merkle membership and non-membership against a published root, path as the last secret.
+  const setParams = { type: "u64", values: JSON.stringify(["300", "301", "900"]) };
+  const setRoot = (await runner.run("predicateSetCommitment", setParams)).result;
+  const otherRoot = (await runner.run("predicateSetCommitment", { ...setParams, values: JSON.stringify(["300", "302", "900"]) })).result;
+  const path = async (value, absent) => (await runner.run("predicateSetPath", { ...setParams, value, absent })).result;
+  const holder = await commit("u64", "300");
+  const member = buildClaim("member", { setCommitment: setRoot }, [holder.commitment]);
+  const memberProof = await proves(member, [holder.secret, await path("300", false)]);
+  checks.member_accepted = memberProof !== null && (await accepts(member, memberProof));
+  checks.member_rejects_other_set = !(await accepts(buildClaim("member", { setCommitment: otherRoot }, [holder.commitment]), memberProof));
+  checks.member_rejects_absence_claim = !(await accepts(buildClaim("absent", { setCommitment: setRoot }, [holder.commitment]), memberProof));
+  const outsider = await commit("u64", "700");
+  const absent = buildClaim("absent", { setCommitment: setRoot }, [outsider.commitment]);
+  const absentProof = await proves(absent, [outsider.secret, await path("700", true)]);
+  checks.absent_accepted = absentProof !== null && (await accepts(absent, absentProof));
+  checks.absent_for_a_member_unprovable = (await proves(buildClaim("absent", { setCommitment: setRoot }, [holder.commitment]), [holder.secret, await path("700", true)])) === null;
+
   const bad = geProof.slice();
   bad[bad.length >> 1] ^= 0x55;
   checks.rejects_corrupted_proof = !(await accepts(ge, bad));

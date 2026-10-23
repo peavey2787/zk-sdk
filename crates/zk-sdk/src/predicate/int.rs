@@ -5,6 +5,7 @@
 //! signedness; [`Number`] is a mathematical integer converted (and range-checked) for a type.
 
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroize;
 
 use crate::{Result, ZkError};
 
@@ -115,6 +116,13 @@ impl std::str::FromStr for IntType {
 pub struct Number {
     negative: bool,
     magnitude: u128,
+}
+
+impl Zeroize for Number {
+    fn zeroize(&mut self) {
+        self.negative.zeroize();
+        self.magnitude.zeroize();
+    }
 }
 
 impl Number {

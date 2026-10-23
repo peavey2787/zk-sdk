@@ -33,6 +33,16 @@ async function measure(family, bits) {
     for (const value of values) made.push(await commit(type, value)); // jobs run one at a time
     return made;
   };
+  // A published set of 100 (depth 8) or 300 (depth 20) even numbers; the holder commits to 2 (a
+  // member) or 3 (a stranger), and the Merkle path travels as the last secret.
+  const setClaim = async (family, depth) => {
+    const base = { type, values: JSON.stringify(Array.from({ length: depth === 8 ? 100 : 300 }, (_, i) => String(i * 2))) };
+    const setCommitment = (await runner.run("predicateSetCommitment", base)).result;
+    const absent = family === "absent";
+    const holder = await commit(type, absent ? "3" : "2");
+    const path = (await runner.run("predicateSetPath", { ...base, value: absent ? "3" : "2", absent })).result;
+    return [buildClaim(family, { setCommitment }, [holder.commitment]), [holder], path];
+  };
   const builders = {
     opens: async () => [buildClaim("opens", {}, [a.commitment]), [a]],
     compare: async () => [buildClaim("compare", { op: "ge", bound: "18" }, [a.commitment]), [a]],
@@ -51,14 +61,18 @@ async function measure(family, bits) {
       const form = { op: "eq", operands: [{ mode: "private", value: "" }, { mode: "public", value: "3" }, { mode: "public", value: "0" }, { mode: "private", value: "" }] };
       return [buildClaim("arithmetic", form, v.map((x) => x.commitment)), v];
     },
+    member8: () => setClaim("member", 8),
+    absent8: () => setClaim("absent", 8),
+    member20: () => setClaim("member", 20),
+    absent20: () => setClaim("absent", 20),
     divide: async () => {
       const v = await many(["47", "5", "2"]);
       const form = { operands: [{ mode: "private", value: "" }, { mode: "public", value: "9" }, { mode: "private", value: "" }, { mode: "private", value: "" }] };
       return [buildClaim("divide", form, v.map((x) => x.commitment)), v];
     },
   };
-  const [claim, committed] = await builders[family]();
-  const secrets = committed.map((x) => x.secret);
+  const [claim, committed, path] = await builders[family]();
+  const secrets = [...committed.map((x) => x.secret), ...(path ? [path] : [])];
   const args = { claim: JSON.stringify(claim), secrets };
 
   const first = await runner.run("predicateProve", args); // includes circuit load and key setup
@@ -89,7 +103,7 @@ async function measure(family, bits) {
 
 async function main() {
   const results = {};
-  for (const family of ["opens", "compare", "range", "compare_committed", "conserve4", "conserve8", "multiply", "divide"]) {
+  for (const family of ["opens", "compare", "range", "compare_committed", "conserve4", "conserve8", "multiply", "divide", "member8", "absent8", "member20", "absent20"]) {
     for (const bits of [32, 64, 128]) results[`${family}_${bits}`] = await measure(family, bits);
   }
   const worst = Math.max(...Object.values(results).map((r) => r.p50_ms));

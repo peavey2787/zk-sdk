@@ -35,6 +35,8 @@ responsive during multi-second proofs. Private values never leave this tab. Back
   <label id="rowOutputs">Private outputs (comma separated)
     <input id="outputs" type="text" value="960, 30"></label>
   <label id="rowFee">Public fee <input id="fee" type="text" value="10"></label>
+  <label id="rowSetValues">Published set members (comma separated)
+    <input id="setValues" type="text" value="100, 200, 300, 400"></label>
   <div id="rowOperands"></div>
   <label id="rowOp">Operator <select id="op"></select></label>
   <label id="rowBound">Public bound <input id="bound" type="text" value="18"></label>
@@ -56,6 +58,7 @@ responsive during multi-second proofs. Private values never leave this tab. Back
     <button id="prove">2. Prove locally</button>
     <button id="verify">3. Verify locally</button>
     <button id="cancel" disabled>Cancel job</button>
+    <button id="forget">Forget secrets</button>
   </div>
   <label>Claim the verifier trusts (JSON; edit it to watch verification reject)
     <textarea id="claim" spellcheck="false"></textarea>

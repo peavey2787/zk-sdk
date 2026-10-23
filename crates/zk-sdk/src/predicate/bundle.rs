@@ -1,4 +1,4 @@
-//! The approved circuits compiled into the SDK. A circuit is only ever used after its SHA-256
+﻿//! The approved circuits compiled into the SDK. A circuit is only ever used after its SHA-256
 //! matches the identity recorded at build time (`approved.rs`), so a corrupted or swapped bundle
 //! fails closed instead of silently proving a different statement.
 
@@ -46,7 +46,7 @@ mod tests {
 
     #[test]
     fn every_bundled_circuit_matches_its_approved_hash() {
-        assert_eq!(BUNDLED.len(), 21);
+        assert_eq!(BUNDLED.len(), 33);
         for bundled in BUNDLED {
             lookup(bundled.name).unwrap();
         }

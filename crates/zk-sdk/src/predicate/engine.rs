@@ -5,9 +5,12 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use zeroize::Zeroize;
+
 use super::bundle;
 use super::claim::Predicate;
 use super::commit::Opening;
+use super::set::SetPath;
 use super::statement::Statement;
 use crate::{
     decode_artifact, encode_artifact, CompiledCircuit, Inputs, KeyPair, Proof, Result,
@@ -15,23 +18,34 @@ use crate::{
 };
 
 /// The openings the prover holds, in the order of the claim's commitments.
-pub struct Witness(Vec<Opening>);
+pub struct Witness {
+    openings: Vec<Opening>,
+    path: Option<SetPath>,
+}
+
+impl Witness {
+    /// Add the Merkle path a set membership or absence claim needs.
+    pub fn with_path(mut self, path: SetPath) -> Self {
+        self.path = Some(path);
+        self
+    }
+}
 
 impl From<Opening> for Witness {
     fn from(opening: Opening) -> Self {
-        Self(vec![opening])
+        Self::from(vec![opening])
     }
 }
 
 impl From<&Opening> for Witness {
     fn from(opening: &Opening) -> Self {
-        Self(vec![opening.clone()])
+        Self::from(vec![opening.clone()])
     }
 }
 
 impl From<(Opening, Opening)> for Witness {
     fn from((left, right): (Opening, Opening)) -> Self {
-        Self(vec![left, right])
+        Self::from(vec![left, right])
     }
 }
 
@@ -41,7 +55,10 @@ impl From<(Opening, Opening)> for Witness {
 /// provide. A single party cannot prove knowledge of secrets it does not have.
 impl From<Vec<Opening>> for Witness {
     fn from(openings: Vec<Opening>) -> Self {
-        Self(openings)
+        Self {
+            openings,
+            path: None,
+        }
     }
 }
 
@@ -155,12 +172,15 @@ impl Predicates {
     /// claim's commitments or the claim is false.
     pub fn prove(&self, claim: &Predicate, witness: impl Into<Witness>) -> Result<PredicateProof> {
         let statement = claim.statement()?;
-        let openings = witness.into().0;
-        let inputs = inputs(&statement, claim, &openings)?;
-        let entry = self.entry(statement.circuit())?;
-        let private = entry.zk.witness(&entry.calculator, &inputs)?;
-        let output = entry.zk.prove(&entry.keys.proving, &private)?;
-        Ok(PredicateProof(encode_artifact(&output.proof)?))
+        let witness = witness.into();
+        let mut inputs = inputs(&statement, claim, &witness)?;
+        let proof = self.entry(statement.circuit()).and_then(|entry| {
+            let private = entry.zk.witness(&entry.calculator, &inputs)?;
+            let output = entry.zk.prove(&entry.keys.proving, &private)?;
+            encode_artifact(&output.proof)
+        });
+        inputs.values_mut().for_each(Zeroize::zeroize);
+        Ok(PredicateProof(proof?))
     }
 
     /// Verify `proof` against `claim`, the statement the caller trusts. Any failure is an error.
@@ -174,7 +194,8 @@ impl Predicates {
 }
 
 /// Public inputs plus the private `limb`/`blinding` signals, after checking each opening matches.
-fn inputs(statement: &Statement, claim: &Predicate, openings: &[Opening]) -> Result<Inputs> {
+fn inputs(statement: &Statement, claim: &Predicate, witness: &Witness) -> Result<Inputs> {
+    let openings = &witness.openings;
     let expected = statement.committed();
     if openings.len() != expected.len() {
         return Err(ZkError::Predicate(format!(
@@ -191,17 +212,21 @@ fn inputs(statement: &Statement, claim: &Predicate, openings: &[Opening]) -> Res
         }
     }
     let values: Vec<_> = openings.iter().map(Opening::value).collect();
-    if let Some(reason) = claim.refusal(&values)? {
+    if let Some(reason) = claim.refusal(&values, witness.path.as_ref())? {
         return Err(ZkError::Predicate(format!(
             "the claim is false, so no proof exists: {reason}"
         )));
     }
-    assignment(statement, openings)
+    assignment(statement, openings, witness.path.as_ref())
 }
 
 /// Every circuit input for `openings`, without judging whether the claim is true. The circuit
 /// itself decides: its witness exists exactly when the claim holds.
-pub(super) fn assignment(statement: &Statement, openings: &[Opening]) -> Result<Inputs> {
+pub(super) fn assignment(
+    statement: &Statement,
+    openings: &[Opening],
+    path: Option<&SetPath>,
+) -> Result<Inputs> {
     let mut inputs = Inputs::new();
     for field in statement.named() {
         if field.array {
@@ -212,7 +237,7 @@ pub(super) fn assignment(statement: &Statement, openings: &[Opening]) -> Result<
     }
     let limbs = statement.ty().width.limbs();
     for slot in statement.slots() {
-        let (limb, blinding) = match slot.source {
+        let (mut limb, mut blinding) = match slot.source {
             Some(source) => (
                 statement.ty().limbs(openings[source].encoded()?),
                 openings[source].blinding().map(u64::from),
@@ -221,6 +246,16 @@ pub(super) fn assignment(statement: &Statement, openings: &[Opening]) -> Result<
         };
         put_array(&mut inputs, &slot.limb, &limb);
         put_array(&mut inputs, &slot.blinding, &blinding);
+        limb.zeroize();
+        blinding.zeroize();
+    }
+    if let Some(shape) = statement.path() {
+        let path = path.ok_or_else(|| {
+            ZkError::Predicate("this claim needs a set path in the witness".into())
+        })?;
+        for (name, value) in path.circuit_inputs(statement.ty(), shape.absent, shape.depth)? {
+            inputs.insert(name, value);
+        }
     }
     Ok(inputs)
 }

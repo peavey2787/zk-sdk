@@ -6,6 +6,7 @@ use super::arithmetic;
 use super::claim::Predicate;
 use super::commit::Commitment;
 use super::int::{IntType, Number};
+use super::set::SetCommitment;
 use crate::{Result, ZkError};
 
 /// One named circuit input: a scalar signal, or an array signal addressed as `name[i]`.
@@ -90,6 +91,14 @@ pub struct Statement {
     slots: Vec<Slot>,
     committed: Vec<Commitment>,
     fields: Vec<Field>,
+    path: Option<PathShape>,
+}
+
+/// The private Merkle path a set claim's circuit also needs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct PathShape {
+    pub absent: bool,
+    pub depth: usize,
 }
 
 impl Statement {
@@ -106,6 +115,7 @@ impl Statement {
             slots,
             committed,
             fields,
+            path: None,
         }
     }
 
@@ -129,6 +139,15 @@ impl Statement {
             committed,
             fields,
         ))
+    }
+
+    fn with_path(mut self, shape: PathShape) -> Self {
+        self.path = Some(shape);
+        self
+    }
+
+    pub(super) fn path(&self) -> Option<PathShape> {
+        self.path
     }
 
     pub fn circuit(&self) -> &str {
@@ -246,8 +265,39 @@ impl Predicate {
                 quotient,
                 remainder,
             } => arithmetic::divide(*dividend, *divisor, *quotient, *remainder),
+            Self::Member { commitment, set } => set_statement(commitment, set, false),
+            Self::Absent { commitment, set } => set_statement(commitment, set, true),
         }
     }
+}
+
+fn set_statement(commitment: &Commitment, set: &SetCommitment, absent: bool) -> Result<Statement> {
+    let ty = commitment.ty();
+    if set.ty() != ty {
+        return Err(ZkError::Predicate(format!(
+            "a {ty} commitment cannot be tested against a set of {}",
+            set.ty()
+        )));
+    }
+    let (family, root) = if absent {
+        ("absent", set.gaps())
+    } else {
+        ("member", set.members())
+    };
+    let statement = Statement::prefixed(
+        &format!("{family}{}", set.depth()),
+        vec![*commitment],
+        &[""],
+        vec![
+            digest("commitment", commitment),
+            signed(ty),
+            array("root", root.iter().map(|w| u64::from(*w)).collect()),
+        ],
+    )?;
+    Ok(statement.with_path(PathShape {
+        absent,
+        depth: set.depth(),
+    }))
 }
 
 #[cfg(test)]

@@ -52,6 +52,18 @@ class Backend:
         else:
             run(["node", TOOL, NODE_PKG, "predicate-commit", ty, value, commitment, secret])
 
+    def set_commitment(self, ty, values, commitment):
+        if self.name == "native":
+            run([CLI, "predicate", "set", "--type", ty, "--values", values, "--commitment", commitment])
+        else:
+            run(["node", TOOL, NODE_PKG, "predicate-set", ty, values, commitment])
+
+    def set_path(self, ty, values, value, proves, path):
+        if self.name == "native":
+            run([CLI, "predicate", "path", "--type", ty, "--values", values, "--value", value, "--proves", proves, "--path", path])
+        else:
+            run(["node", TOOL, NODE_PKG, "predicate-path", ty, values, value, proves, path])
+
     def predicate_prove(self, claim, proof, secrets):
         if self.name == "native":
             run([CLI, "predicate", "prove", "--claim", claim, "--secrets", ",".join(str(secret) for secret in secrets), "--proof", proof, "--min-bits", "115"])
@@ -97,7 +109,11 @@ def predicate_claims(c):
         f'{{"kind":"divide","dividend":"{c["rem_dividend"]}","divisor":"{divisor}",'
         f'"quotient":"{c["quotient"]}","remainder":"{c["remainder"]}"}}'
     )
+    member = lambda root: f'{{"kind":"member","commitment":"{c["in2"]}","set":"{root}"}}'
+    absent = lambda root: f'{{"kind":"absent","commitment":"{c["in1"]}","set":"{root}"}}'
     return {
+        "member_u64": (member(c["set"]), member(c["other_set"]), ["in2", "member_path"]),
+        "absent_u64": (absent(c["set"]), absent(c["other_set"]), ["in1", "absent_path"]),
         "opens": (opens("age"), opens("low"), ["age"]),
         "ge_u32": (ge(18), ge(19), ["age"]),
         "range_i128": (rng(-9), rng(-8), ["wide"]),
@@ -120,6 +136,17 @@ def predicate_matrix(backends, tmp):
         commitment, secret = tmp / f"{name}.c", tmp / f"{name}.s"
         maker.commit(ty, value, commitment, secret)
         commitments[name], secrets[name] = commitment.read_text(), secret
+    set_values = tmp / "set.json"
+    set_values.write_text('["300","301","900"]')
+    other_values = tmp / "other-set.json"
+    other_values.write_text('["300","302","900"]')
+    for name, values, out in (("set", set_values, "set"), ("other_set", other_values, "other_set")):
+        commitment = tmp / f"{out}.c"
+        next(makers).set_commitment("u64", values, commitment)
+        commitments[name] = commitment.read_text()
+    for name, value, proves in (("member_path", "300", "member"), ("absent_path", "700", "absent")):
+        secrets[name] = tmp / f"{name}.json"
+        next(makers).set_path("u64", set_values, value, proves, secrets[name])
     for name, (claim_json, altered_json, openings) in predicate_claims(commitments).items():
         claim, altered = tmp / f"{name}.claim.json", tmp / f"{name}.altered.json"
         claim.write_text(claim_json)

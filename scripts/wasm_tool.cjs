@@ -28,6 +28,12 @@ const commands = {
     fs.writeFileSync(commitment, made.commitment);
     fs.writeFileSync(secret, made.secret);
   },
+  "predicate-set": ([type, values, commitment]) => {
+    fs.writeFileSync(commitment, zk.predicate_set_commitment(type, fs.readFileSync(values, "utf8")));
+  },
+  "predicate-path": ([type, values, value, proves, path]) => {
+    fs.writeFileSync(path, zk.predicate_set_path(type, fs.readFileSync(values, "utf8"), value, proves === "absent"));
+  },
   // ZK_MIN_BITS is the explicit authorization to run circuits below the 116-bit default.
   "predicate-prove": ([claim, proof, ...secrets]) => {
     authorize();

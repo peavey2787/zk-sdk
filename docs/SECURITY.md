@@ -23,7 +23,7 @@ Regression guards: unit tests in `zk-spartan-whir/src/params.rs` pin the profile
 
 ## Randomness and secrets
 
-Native builds use the OS CSPRNG; wasm uses the browser CSPRNG (`crypto.getRandomValues`) and fails rather than falling back. Witnesses and proving keys are sensitive; `PrivateInputs` has a redacted `Debug`. Proofs expose their public inputs. Browser memory is not zeroized, and there has been no side-channel review.
+Native builds use the OS CSPRNG; wasm uses the browser CSPRNG (`crypto.getRandomValues`) and fails rather than falling back. Witnesses and proving keys are sensitive; `PrivateInputs` has a redacted `Debug`. Proofs expose their public inputs. Secret memory is wiped on a best-effort basis only (see "Secret handling"), and there has been no side-channel review.
 
 ## Resource limits
 
@@ -40,3 +40,9 @@ See `docs/PREDICATES.md` for the commitment, integer encoding and circuit-identi
 ## Not covered
 
 Side channels, fault attacks, supply-chain review of upstream beyond pinning, and the soundness of the circuits you add.
+
+## Secret handling
+
+What the code does: an `Opening` (value and blinding), the witness bytes (`PrivateInputs`), the circuit input map built from an opening, the `Committed` secret text and the parsed secret JSON are overwritten with `zeroize` when dropped; `predicate::prove` takes the secret texts by value and overwrites them as soon as they are parsed, on success and on error. `Debug` output is redacted everywhere. The browser page never writes secrets to storage, drops its references on "Forget secrets" and on `pagehide`, and offers secret export only on an explicit click.
+
+What it cannot do: the wipe is best effort. Copies the compiler or allocator made earlier, the prover's own internal buffers inside upstream crates, `serde_json`'s parse buffers, the CLI's file contents, WebAssembly linear memory (which is never returned to the OS and is reused, not scrubbed), and every JavaScript string and `postMessage` copy are not reachable from Rust, and JavaScript strings are immutable. A process memory dump or a swap file can therefore still contain a secret. The CLI stores secrets as plain files; protect them with file permissions or an encrypted volume. Use a fresh blinding per commitment (`commit` does) and never reuse a secret file across claims you do not want linked.

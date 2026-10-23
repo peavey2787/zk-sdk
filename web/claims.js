@@ -10,6 +10,8 @@ export const FAMILIES = {
   compare_committed: { title: "Committed value vs another committed value", fields: ["valueA", "valueB", "op"] },
   conserve: { title: "Conservation: inputs = outputs + fee", fields: ["inputs", "outputs", "fee"] },
   total: { title: "Total of committed values vs a public bound", fields: ["inputs", "op", "bound"] },
+  member: { title: "Committed value is in a published set", fields: ["valueA", "setValues"] },
+  absent: { title: "Committed value is not in a published set", fields: ["valueA", "setValues"] },
   arithmetic: { title: "Product: x * y + z (op) t", fields: ["op", "operands"], operands: ["x", "y", "z", "t"] },
   divide: {
     title: "Division: dividend = quotient * divisor + remainder",
@@ -19,6 +21,9 @@ export const FAMILIES = {
 };
 
 const list = (text) => text.split(",").map((item) => item.trim()).filter(Boolean);
+
+// The set's members as the JSON array the SDK builds the Merkle trees from.
+export const setValuesJson = (form) => JSON.stringify(list(form.setValues));
 
 // The private values to commit to, in the order `buildClaim` consumes their commitments.
 export function privateValues(family, form) {
@@ -66,6 +71,9 @@ export function buildClaim(family, form, commitments) {
     }
     case "total":
       return { kind: "sum", plus: commitments, minus: [], plus_constant: "0", minus_constant: form.bound, op: form.op };
+    case "member":
+    case "absent":
+      return { kind: family, commitment: commitments[0], set: form.setCommitment };
     case "arithmetic": {
       const [x, y, z, t] = operandClaims(form, commitments);
       return { kind: "arithmetic", x, y, z, t, op: form.op };

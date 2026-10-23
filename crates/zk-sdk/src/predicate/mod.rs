@@ -23,14 +23,17 @@ mod commit;
 mod differential;
 mod engine;
 mod exact;
+mod hash;
 mod int;
 mod semantics;
+mod set;
 mod statement;
 
-pub use api::{commit, describe, prove, verify, Committed};
+pub use api::{commit, describe, prove, set_commitment, set_path, verify, Committed};
 pub use arithmetic::MAX_TERMS;
 pub use claim::{Op, Operand, Predicate};
 pub use commit::{Commitment, Opening};
 pub use engine::{PredicateProof, Predicates, Witness};
 pub use int::{IntType, Number, Width};
+pub use set::{SetCommitment, SetPath, SetTree, SET_DEPTHS};
 pub use statement::Statement;

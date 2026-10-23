@@ -15,6 +15,7 @@ use super::claim::{Op, Operand, Predicate};
 use super::commit::{Commitment, Opening, FIELD_MODULUS};
 use super::engine::assignment;
 use super::int::{IntType, Number, Width};
+use super::set::{SetPath, SetTree};
 
 const TYPES: [IntType; 6] = [
     IntType::U32,
@@ -123,6 +124,17 @@ fn amount(ty: IntType, rng: &mut Rng) -> Number {
 struct Case {
     claim: Predicate,
     openings: Vec<Opening>,
+    path: Option<SetPath>,
+}
+
+impl Case {
+    fn new(claim: Predicate, openings: Vec<Opening>) -> Self {
+        Self {
+            claim,
+            openings,
+            path: None,
+        }
+    }
 }
 
 fn blinding(rng: &mut Rng) -> [u32; 8] {
@@ -176,7 +188,7 @@ fn sum_case(ty: IntType, rng: &mut Rng) -> Case {
         minus.to_vec(),
         amount(ty, rng),
     );
-    Case { claim, openings }
+    Case::new(claim, openings)
 }
 
 /// A sum that balances exactly: the right constant is solved from small values.
@@ -202,10 +214,10 @@ fn balanced_sum_case(ty: IntType, rng: &mut Rng) -> Case {
         .map(|v| commit(ty, Number::from(*v), rng))
         .unzip();
     let (inputs, outputs) = commitments.split_at(plus_count);
-    Case {
-        claim: Predicate::conserve(inputs.to_vec(), outputs.to_vec(), fee as u128),
+    Case::new(
+        Predicate::conserve(inputs.to_vec(), outputs.to_vec(), fee as u128),
         openings,
-    }
+    )
 }
 
 fn arithmetic_case(ty: IntType, rng: &mut Rng) -> Case {
@@ -226,20 +238,17 @@ fn arithmetic_case(ty: IntType, rng: &mut Rng) -> Case {
     } else {
         OPS[rng.below(6)]
     };
-    Case {
-        claim: Predicate::arithmetic(x, y, z, op, t),
-        openings,
-    }
+    Case::new(Predicate::arithmetic(x, y, z, op, t), openings)
 }
 
 fn extreme_arithmetic_case(ty: IntType, rng: &mut Rng) -> Case {
     let values = [any(ty, rng), any(ty, rng), any(ty, rng), any(ty, rng)];
     let (operands, openings) = operands(ty, values, visibility(rng), rng);
     let [x, y, z, t] = operands;
-    Case {
-        claim: Predicate::arithmetic(x, y, z, OPS[rng.below(6)], t),
+    Case::new(
+        Predicate::arithmetic(x, y, z, OPS[rng.below(6)], t),
         openings,
-    }
+    )
 }
 
 fn divide_case(ty: IntType, rng: &mut Rng) -> Case {
@@ -261,10 +270,10 @@ fn divide_case(ty: IntType, rng: &mut Rng) -> Case {
     let values = [dividend, divisor, quotient, remainder].map(Number::from);
     let (operands, openings) = operands(ty, values, visibility(rng), rng);
     let [dividend, divisor, quotient, remainder] = operands;
-    Case {
-        claim: Predicate::divide(dividend, divisor, quotient, remainder),
+    Case::new(
+        Predicate::divide(dividend, divisor, quotient, remainder),
         openings,
-    }
+    )
 }
 
 fn fits(ty: IntType, case: &Case) -> bool {
@@ -290,11 +299,15 @@ struct Tally {
 fn agree(case: &Case, cache: &mut HashMap<String, WitnessCalculator>, tally: &mut Tally) {
     let statement = case.claim.statement().unwrap();
     let values: Vec<Number> = case.openings.iter().map(Opening::value).collect();
-    let expected = case.claim.holds(&values).unwrap();
-    let inputs = assignment(&statement, &case.openings).unwrap();
-    let satisfiable = calculator(cache, statement.circuit())
-        .witness(&inputs)
-        .is_ok();
+    let expected = case.claim.holds(&values, case.path.as_ref()).unwrap();
+    // A path of the wrong kind cannot even be assigned: that is "no witness" too.
+    let satisfiable = assignment(&statement, &case.openings, case.path.as_ref())
+        .map(|inputs| {
+            calculator(cache, statement.circuit())
+                .witness(&inputs)
+                .is_ok()
+        })
+        .unwrap_or(false);
     assert_eq!(
         satisfiable,
         expected,
@@ -355,4 +368,44 @@ fn extreme_products_agree_with_the_semantics() {
 #[test]
 fn division_agrees_with_the_semantics() {
     run("divide", 40, divide_case);
+}
+
+/// A small set of values of `ty`, plus a probe that is a member about half of the time.
+fn set_case(ty: IntType, rng: &mut Rng) -> Case {
+    let members: Vec<Number> = (0..rng.below(6)).map(|_| any(ty, rng)).collect();
+    let tree = SetTree::new(ty, members.clone()).unwrap();
+    let probe = if !members.is_empty() && rng.below(2) == 0 {
+        members[rng.below(members.len())]
+    } else {
+        any(ty, rng)
+    };
+    let (commitment, opening) = commit(ty, probe, rng);
+    let absent = rng.below(2) == 0;
+    // Mostly the honest path; sometimes the path of a different probe, which must be refused.
+    let wrong = rng.below(4) == 0;
+    let asked = if wrong { any(ty, rng) } else { probe };
+    let path = if absent {
+        tree.absence_path(asked)
+    } else {
+        tree.member_path(asked)
+    };
+    let claim = if absent {
+        Predicate::not_member_of(commitment, tree.commitment())
+    } else {
+        Predicate::member_of(commitment, tree.commitment())
+    };
+    Case {
+        claim,
+        openings: vec![opening],
+        path: path.ok().or_else(|| {
+            tree.absence_path(0u8)
+                .or_else(|_| tree.member_path(0u8))
+                .ok()
+        }),
+    }
+}
+
+#[test]
+fn set_claims_agree_with_the_semantics() {
+    run("sets", 12, set_case);
 }

@@ -37,6 +37,12 @@ FAMILIES = {
     "sum8": ("arithmetic", "WeightedSum", SUM_PUBLICS, ", 8"),
     "arith": ("arithmetic", "MulAdd", OPERANDS + ", signed, accept_lt, accept_eq, accept_gt, divide", ""),
 }
+# Merkle set circuits exist for each supported depth (leaves = 2^depth); keep in step with
+# `SET_DEPTHS` in crates/zk-sdk/src/predicate/set.rs.
+SET_DEPTHS = (8, 20)
+for _depth in SET_DEPTHS:
+    FAMILIES[f"member{_depth}"] = ("sets", "SetMember", "commitment, signed, root", f", {_depth}")
+    FAMILIES[f"absent{_depth}"] = ("sets", "SetAbsent", "commitment, signed, root", f", {_depth}")
 
 
 def run(command, cwd=ROOT):

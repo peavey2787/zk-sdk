@@ -3,6 +3,7 @@
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroize;
 
 use crate::{Result, ZkError};
 
@@ -46,6 +47,12 @@ impl PrivateInputs {
 
     pub fn wtns_bytes(&self) -> &[u8] {
         &self.wtns
+    }
+}
+
+impl Drop for PrivateInputs {
+    fn drop(&mut self) {
+        self.wtns.zeroize();
     }
 }
 

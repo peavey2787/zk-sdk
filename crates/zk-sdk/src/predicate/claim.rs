@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use super::commit::Commitment;
 use super::int::Number;
+use super::set::SetCommitment;
 use crate::{Result, ZkError};
 
 /// Comparison operator, realised by the public acceptance flags `(lt, eq, gt)` of the circuits.
@@ -152,6 +153,16 @@ pub enum Predicate {
         divisor: Operand,
         quotient: Operand,
         remainder: Operand,
+    },
+    /// The committed value is a member of the published set.
+    Member {
+        commitment: Commitment,
+        set: SetCommitment,
+    },
+    /// The committed value is not a member of the published set.
+    Absent {
+        commitment: Commitment,
+        set: SetCommitment,
     },
 }
 
@@ -320,6 +331,16 @@ impl Predicate {
             quotient: quotient.into(),
             remainder: remainder.into(),
         }
+    }
+
+    /// The committed value is in `set` (prove with a path from `SetTree::member_path`).
+    pub fn member_of(commitment: Commitment, set: SetCommitment) -> Self {
+        Self::Member { commitment, set }
+    }
+
+    /// The committed value is not in `set` (prove with a path from `SetTree::absence_path`).
+    pub fn not_member_of(commitment: Commitment, set: SetCommitment) -> Self {
+        Self::Absent { commitment, set }
     }
 
     pub fn to_json(&self) -> String {

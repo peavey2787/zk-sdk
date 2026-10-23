@@ -16,9 +16,10 @@ Keep the facade at six operations. Mark a milestone done only when its acceptanc
 
 - [x] Arithmetic and conservation: sums, balances, conservation with fees and explicit mint/burn, products, bounded division, mixed public/private operands, all six types; differential-tested against a reference semantics; Rust, CLI, browser, native/WASM interop.
 
+- [x] Merkle/set membership and non-membership (member and gap trees, depths 8 and 20, all six types): Rust, CLI, browser, native/WASM interop, differential-tested; publisher-honesty assumption documented.
+
 ## Next predicate families (in order; reuse the shared gadgets in `circuits/lib`)
 
-- [ ] Merkle/set membership and non-membership.
 - [ ] Private proximity and distance.
 - [ ] Composition (`all`, `any`, constrained `not`) with shared-witness binding.
 - [ ] Credentials: knowledge, issuer-backed attributes (never confused with password knowledge), expiry, revocation.

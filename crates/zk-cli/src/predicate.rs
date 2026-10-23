@@ -9,13 +9,17 @@ use crate::args::Flags;
 use crate::io::{read, read_text, sdk, timed, write};
 
 pub const USAGE: &str = "  zk predicate commit   --type u32|i32|u64|i64|u128|i128 --value N --commitment F --secret F
+  zk predicate set      --type T --values F.json --commitment F
+  zk predicate path     --type T --values F.json --value N --proves member|absent --path F
   zk predicate describe --claim F.json [--min-bits N]
   zk predicate prove    --claim F.json --secrets F[,F...] --proof F [--min-bits N]
   zk predicate verify   --claim F.json --proof F [--min-bits N]
 --min-bits: authorize circuits that cannot reach the 116-bit default to run at the highest level
   they attain, but never below N (the larger arithmetic circuits attain 115); without it they fail
-secrets: one file per committed value, in claim order (comma separated)
-claim: {\"kind\":\"opens\"|\"compare\"|\"range\"|\"compare_committed\"|\"sum\"|\"arithmetic\"|\"divide\", ...};
+secrets: one file per committed value, in claim order (comma separated); a member/absent claim
+  takes its path file (from `path`) as the last one
+values: a JSON array of decimal strings, e.g. [\"10\",\"20\"]
+claim: {\"kind\":\"opens\"|\"compare\"|\"range\"|\"compare_committed\"|\"sum\"|\"arithmetic\"|\"divide\"|\"member\"|\"absent\", ...};
 see docs/PREDICATES.md";
 
 fn commit(flags: &Flags) -> Result<(), String> {
@@ -24,6 +28,31 @@ fn commit(flags: &Flags) -> Result<(), String> {
     write(flags, "secret", made.secret.as_bytes())?;
     println!("{}", made.commitment);
     Ok(())
+}
+
+fn set(flags: &Flags) -> Result<(), String> {
+    let values = read_text(flags, "values")?;
+    let commitment = predicate::set_commitment(flags.required("type")?, &values).map_err(sdk)?;
+    write(flags, "commitment", commitment.as_bytes())?;
+    println!("{commitment}");
+    Ok(())
+}
+
+fn path(flags: &Flags) -> Result<(), String> {
+    let values = read_text(flags, "values")?;
+    let absent = match flags.required("proves")? {
+        "member" => false,
+        "absent" => true,
+        other => return Err(format!("--proves must be member or absent, got {other}")),
+    };
+    let path = predicate::set_path(
+        flags.required("type")?,
+        &values,
+        flags.required("value")?,
+        absent,
+    )
+    .map_err(sdk)?;
+    write(flags, "path", path.as_bytes())
 }
 
 /// The default 116-bit engine, lowered only as far as `--min-bits` explicitly allows.
@@ -47,7 +76,7 @@ fn prove(flags: &Flags) -> Result<(), String> {
     let claim = read_text(flags, "claim")?;
     let zk = engine(flags)?;
     let proof = timed("prove", || {
-        predicate::prove(&zk, &claim, &secrets).map_err(sdk)
+        predicate::prove(&zk, &claim, secrets).map_err(sdk)
     })?;
     write(flags, "proof", &proof)
 }
@@ -77,6 +106,8 @@ pub fn run(args: &[String]) -> Result<(), String> {
     let flags = |allowed: &[&str]| Flags::parse(rest, allowed);
     match command.as_str() {
         "commit" => commit(&flags(&["type", "value", "commitment", "secret"])?),
+        "set" => set(&flags(&["type", "values", "commitment"])?),
+        "path" => path(&flags(&["type", "values", "value", "proves", "path"])?),
         "describe" => describe(&flags(&["claim", "min-bits"])?),
         "prove" => prove(&flags(&["claim", "secrets", "proof", "min-bits"])?),
         "verify" => verify(&flags(&["claim", "proof", "min-bits"])?),

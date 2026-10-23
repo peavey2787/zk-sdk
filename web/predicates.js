@@ -1,4 +1,4 @@
-import { buildClaim, FAMILIES, INT_TYPES, OPS, privateValues } from "./claims.js";
+import { buildClaim, FAMILIES, INT_TYPES, OPS, privateValues, setValuesJson } from "./claims.js";
 import { JobRunner } from "./job-runner.js";
 
 const $ = (id) => document.getElementById(id);
@@ -6,7 +6,7 @@ const runner = new JobRunner("./worker.js");
 const state = { secrets: [], proof: null };
 const ROWS = {
   valueA: "rowValueA", valueB: "rowValueB", op: "rowOp", bound: "rowBound", lo: "rowLo", hi: "rowHi",
-  ends: "rowEnds", inputs: "rowInputs", outputs: "rowOutputs", fee: "rowFee", operands: "rowOperands",
+  ends: "rowEnds", setValues: "rowSetValues", inputs: "rowInputs", outputs: "rowOutputs", fee: "rowFee", operands: "rowOperands",
 };
 const DEFAULT_OPERANDS = { x: "300", y: "3", z: "30", t: "900", dividend: "47", divisor: "9", quotient: "5", remainder: "2" };
 const PUBLIC_BY_DEFAULT = new Set(["y", "divisor"]);
@@ -25,7 +25,7 @@ function form() {
     op: $("op").value, bound: text("bound"), lo: text("lo"), hi: text("hi"),
     loInclusive: $("loInclusive").checked, hiInclusive: $("hiInclusive").checked,
     valueA: text("valueA"), valueB: text("valueB"),
-    inputs: text("inputs"), outputs: text("outputs"), fee: text("fee"), operands,
+    setValues: text("setValues"), inputs: text("inputs"), outputs: text("outputs"), fee: text("fee"), operands,
   };
 }
 
@@ -77,6 +77,17 @@ async function job(label, work) {
 
 const show = (id, ms) => ($(id).textContent = `${ms} ms`);
 
+// For set claims: the published set commitment and the private Merkle path (sent to the prover as
+// one more secret). Other claims have neither.
+async function setArtifacts() {
+  const family = $("family").value;
+  if (family !== "member" && family !== "absent") return { path: [] };
+  const base = { type: $("type").value, values: setValuesJson(form()) };
+  const { result: commitment } = await runner.run("predicateSetCommitment", base);
+  const { result: path } = await runner.run("predicateSetPath", { ...base, value: text("valueA"), absent: family === "absent" });
+  return { commitment, path: [path] };
+}
+
 async function commit() {
   const values = privateValues($("family").value, form());
   if (!values.length) throw new Error("the claim needs at least one private value");
@@ -87,15 +98,24 @@ async function commit() {
     made.push(JSON.parse(result));
     total += ms;
   }
-  state.secrets = made.map((m) => m.secret);
+  const set = await setArtifacts();
+  state.secrets = [...made.map((m) => m.secret), ...set.path];
   state.proof = null;
-  $("claim").value = JSON.stringify(buildClaim($("family").value, form(), made.map((m) => m.commitment)), null, 1);
+  const claimForm = { ...form(), setCommitment: set.commitment };
+  $("claim").value = JSON.stringify(buildClaim($("family").value, claimForm, made.map((m) => m.commitment)), null, 1);
   show("t-commit", total);
   log(`committed ${values.length} value(s); the claim is public, the secrets stay in this tab`, "good");
 }
 
 // The worker is respawned on cancel, so the chosen minimum travels with every job that needs it.
 const authorize = () => runner.run("predicateMinimumBits", { bits: Number($("minBits").value) });
+
+// Drop every reference to the private openings (and the proof made from them) so the browser may
+// reclaim them. JavaScript strings cannot be overwritten, so this is release, not erasure.
+function forgetSecrets() {
+  state.secrets = [];
+  state.proof = null;
+}
 
 async function prove() {
   if (!state.secrets.length) throw new Error("commit first");
@@ -139,6 +159,9 @@ function wire() {
   $("prove").onclick = () => job("prove", prove);
   $("verify").onclick = () => job("verify", verify);
   $("cancel").onclick = () => runner.cancel();
+  $("forget").onclick = forgetSecrets;
+  // Secrets live only in this tab's memory; leaving the page drops the references too.
+  addEventListener("pagehide", forgetSecrets);
   $("tamper").onclick = () => {
     if (!state.proof) return log("no proof to corrupt", "bad");
     state.proof = state.proof.slice();
