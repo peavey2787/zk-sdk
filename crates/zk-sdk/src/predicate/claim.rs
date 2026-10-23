@@ -10,6 +10,7 @@ use std::cmp::Ordering;
 use serde::{Deserialize, Serialize};
 
 use super::commit::Commitment;
+use super::credential::IssuerCommitment;
 use super::int::Number;
 use super::set::SetCommitment;
 use crate::{Result, ZkError};
@@ -181,6 +182,15 @@ pub enum Predicate {
     InAnyRange {
         commitment: Commitment,
         ranges: Vec<[Number; 2]>,
+    },
+    /// The three committed values (a typed attribute, a `u64` serial, a `u64` expiry) are those of
+    /// one credential the issuer published under `issuer`, and the expiry is not before `now`.
+    Credential {
+        attribute: Commitment,
+        serial: Commitment,
+        expiry: Commitment,
+        issuer: IssuerCommitment,
+        now: Number,
     },
     /// The committed point `(x, y)` is at Euclidean distance `op` `radius` from a public centre:
     /// `(x - center_x)^2 + (y - center_y)^2  op  radius^2`, on exact integers.
@@ -412,13 +422,32 @@ impl Predicate {
             Self::Opens { .. }
             | Self::Range { .. }
             | Self::Divide { .. }
-            | Self::InAnyRange { .. } => {
+            | Self::InAnyRange { .. }
+            | Self::Credential { .. } => {
                 return Err(ZkError::Predicate(
                     "this claim has no single-claim negation".into(),
                 ))
             }
         }
         Ok(negated)
+    }
+
+    /// An issuer-backed credential, valid at `now` (the verifier's own clock, Unix seconds).
+    /// Prove with the openings and path from `Credential::present`.
+    pub fn credential(
+        attribute: Commitment,
+        serial: Commitment,
+        expiry: Commitment,
+        issuer: IssuerCommitment,
+        now: impl Into<Number>,
+    ) -> Self {
+        Self::Credential {
+            attribute,
+            serial,
+            expiry,
+            issuer,
+            now: now.into(),
+        }
     }
 
     /// The committed point is within `radius` of `center` (inclusive).

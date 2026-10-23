@@ -13,6 +13,7 @@ use zk_witness::WitnessCalculator;
 use super::bundle;
 use super::claim::{Op, Operand, Predicate};
 use super::commit::{Commitment, Opening, FIELD_MODULUS};
+use super::credential::{CredentialEntry, CredentialIssuer};
 use super::engine::assignment;
 use super::int::{IntType, Number, Width};
 use super::set::{SetPath, SetTree};
@@ -334,8 +335,15 @@ fn interval_unions_agree_with_the_semantics() {
     run("any_range", 40, any_range_case);
 }
 
-fn fits(ty: IntType, case: &Case) -> bool {
-    case.claim.statement().is_ok() && case.openings.iter().all(|o| o.ty() == ty)
+fn fits(_ty: IntType, case: &Case) -> bool {
+    case.claim.statement().is_ok_and(|statement| {
+        statement.committed().len() == case.openings.len()
+            && statement
+                .committed()
+                .iter()
+                .zip(&case.openings)
+                .all(|(commitment, opening)| commitment.ty() == opening.ty())
+    })
 }
 
 fn calculator<'a>(
@@ -461,6 +469,43 @@ fn set_case(ty: IntType, rng: &mut Rng) -> Case {
                 .ok()
         }),
     }
+}
+
+/// A small issuer; the holder presents one of its credentials at a time that is before or after
+/// the expiry, sometimes with a value changed or the path of another credential, which must be
+/// refused.
+fn credential_case(ty: IntType, rng: &mut Rng) -> Case {
+    let entries: Vec<CredentialEntry> = (0..2 + rng.below(4))
+        .map(|serial| CredentialEntry {
+            attribute: any(ty, rng),
+            serial: serial as u64 + 1,
+            expiry: 10 + rng.below(90) as u64,
+        })
+        .collect();
+    let issuer = CredentialIssuer::new(ty, entries.clone()).unwrap();
+    let held = entries[rng.below(entries.len())];
+    let other = entries[rng.below(entries.len())];
+    let mut shown = held;
+    match rng.below(5) {
+        0 => shown.attribute = any(ty, rng),
+        1 => shown.serial = other.serial,
+        2 => shown.expiry += 1 + rng.below(3) as u64,
+        _ => {}
+    }
+    let path_of = if rng.below(6) == 0 { other } else { held };
+    let now = rng.below(110) as u64;
+    let (attribute, a) = commit(ty, shown.attribute, rng);
+    let (serial, s) = commit(IntType::U64, Number::from(shown.serial), rng);
+    let (expiry, e) = commit(IntType::U64, Number::from(shown.expiry), rng);
+    let claim = Predicate::credential(attribute, serial, expiry, issuer.commitment(), now);
+    let mut case = Case::new(claim, vec![a, s, e]);
+    case.path = Some(issuer.credential(path_of.serial).unwrap().path.clone());
+    case
+}
+
+#[test]
+fn credentials_agree_with_the_semantics() {
+    run("credential", 12, credential_case);
 }
 
 #[test]

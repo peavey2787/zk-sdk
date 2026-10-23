@@ -45,6 +45,7 @@ SET_DEPTHS = (8, 20)
 for _depth in SET_DEPTHS:
     FAMILIES[f"member{_depth}"] = ("sets", "SetMember", "commitment, signed, root", f", {_depth}")
     FAMILIES[f"absent{_depth}"] = ("sets", "SetAbsent", "commitment, signed, root", f", {_depth}")
+    FAMILIES[f"cred{_depth}"] = ("credentials", "Credential", "a_commitment, s_commitment, e_commitment, signed, root, now", f", {_depth}")
 
 
 def run(command, cwd=ROOT):

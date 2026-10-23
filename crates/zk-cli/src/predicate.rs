@@ -3,6 +3,7 @@
 
 use std::fs;
 
+use zk_sdk::files::write_atomic;
 use zk_sdk::predicate::{self, Predicates};
 
 use crate::args::Flags;
@@ -11,6 +12,8 @@ use crate::io::{read, read_text, sdk, timed, write};
 pub const USAGE: &str = "  zk predicate commit   --type u32|i32|u64|i64|u128|i128 --value N --commitment F --secret F
   zk predicate set      --type T --values F.json --commitment F
   zk predicate path     --type T --values F.json --value N --proves member|absent --path F
+  zk predicate issue    --type T --entries F.json --out F.json
+  zk predicate present  --credential F --now UNIX_SECONDS [--options F.json] --claim F.json --secrets-prefix P
   zk predicate describe --claim F.json [--min-bits N]
   zk predicate prove    --claim F.json --secrets F[,F...] --proof F [--min-bits N]
   zk predicate verify   --claim F.json --proof F [--min-bits N]
@@ -18,8 +21,12 @@ pub const USAGE: &str = "  zk predicate commit   --type u32|i32|u64|i64|u128|i12
   they attain, but never below N (the larger arithmetic circuits attain 115); without it they fail
 secrets: one file per committed value, in claim order (comma separated); a member/absent claim
   takes its path file (from `path`) as the last one
+entries: a JSON array of {\"attribute\",\"serial\",\"expiry\"} (decimal strings); `issue` writes
+  {\"issuer\",\"credentials\":[...]}: publish the issuer, give each holder one credential (a secret)
+present: writes the claim and its secrets to P0, P1, ... (pass them to `prove` in that order);
+  --options {\"also\":[claims using \"$attribute\"], \"revoked\":[serials]} adds claims and a revocation check
 values: a JSON array of decimal strings, e.g. [\"10\",\"20\"]
-claim: {\"kind\":\"opens\"|\"compare\"|\"range\"|\"compare_committed\"|\"sum\"|\"arithmetic\"|\"divide\"|\"member\"|\"absent\", ...};
+claim: {\"kind\":\"opens\"|\"compare\"|\"range\"|\"compare_committed\"|\"sum\"|\"arithmetic\"|\"divide\"|\"member\"|\"absent\"|\"in_any_range\"|\"distance\"|\"credential\"|\"all\", ...};
 see docs/PREDICATES.md";
 
 fn commit(flags: &Flags) -> Result<(), String> {
@@ -67,6 +74,34 @@ fn engine(flags: &Flags) -> Result<Predicates, String> {
     }
 }
 
+fn issue(flags: &Flags) -> Result<(), String> {
+    let entries = read_text(flags, "entries")?;
+    let issued = predicate::credential_issue(flags.required("type")?, &entries).map_err(sdk)?;
+    write(flags, "out", issued.as_bytes())
+}
+
+fn present(flags: &Flags) -> Result<(), String> {
+    let options = match flags.optional("options") {
+        Some(_) => read_text(flags, "options")?,
+        None => "{}".to_owned(),
+    };
+    let presented = predicate::credential_present(
+        &read_text(flags, "credential")?,
+        flags.required("now")?,
+        &options,
+    )
+    .map_err(sdk)?;
+    write(flags, "claim", presented.claim().as_bytes())?;
+    let prefix = flags.required("secrets-prefix")?;
+    presented
+        .secrets
+        .iter()
+        .enumerate()
+        .try_for_each(|(i, secret)| {
+            write_atomic(format!("{prefix}{i}"), secret.as_bytes()).map_err(sdk)
+        })
+}
+
 fn prove(flags: &Flags) -> Result<(), String> {
     let secrets = flags
         .required("secrets")?
@@ -108,6 +143,14 @@ pub fn run(args: &[String]) -> Result<(), String> {
         "commit" => commit(&flags(&["type", "value", "commitment", "secret"])?),
         "set" => set(&flags(&["type", "values", "commitment"])?),
         "path" => path(&flags(&["type", "values", "value", "proves", "path"])?),
+        "issue" => issue(&flags(&["type", "entries", "out"])?),
+        "present" => present(&flags(&[
+            "credential",
+            "now",
+            "options",
+            "claim",
+            "secrets-prefix",
+        ])?),
         "describe" => describe(&flags(&["claim", "min-bits"])?),
         "prove" => prove(&flags(&["claim", "secrets", "proof", "min-bits"])?),
         "verify" => verify(&flags(&["claim", "proof", "min-bits"])?),

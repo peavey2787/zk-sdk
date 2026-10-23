@@ -132,7 +132,7 @@ impl SetCommitment {
 }
 
 /// Field elements from 8-digit hex groups; `None` when one is malformed or not canonical.
-fn parse_words(hex: &str) -> Option<Vec<u32>> {
+pub(super) fn parse_words(hex: &str) -> Option<Vec<u32>> {
     if !hex.is_ascii() {
         return None;
     }
@@ -194,7 +194,20 @@ impl fmt::Debug for SetPath {
 }
 
 impl SetPath {
-    fn root(&self, leaf: Digest) -> Digest {
+    /// A path to a member leaf: its position and the sibling digests bottom-up.
+    pub(super) fn member(index: u64, siblings: Vec<Digest>) -> Self {
+        Self {
+            index,
+            siblings,
+            gap: None,
+        }
+    }
+
+    pub(super) fn siblings_len(&self) -> usize {
+        self.siblings.len()
+    }
+
+    pub(super) fn root(&self, leaf: Digest) -> Digest {
         self.siblings
             .iter()
             .enumerate()
@@ -267,7 +280,7 @@ impl SetPath {
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct PathText {
+pub(super) struct PathText {
     index: u64,
     siblings: Vec<String>,
     #[serde(default)]
@@ -300,7 +313,7 @@ impl From<&SetPath> for PathText {
 }
 
 impl PathText {
-    fn into_path(self) -> Result<SetPath> {
+    pub(super) fn into_path(self) -> Result<SetPath> {
         let invalid = || ZkError::Format("malformed set path".into());
         let end = |text: Option<String>| {
             text.map(|t| t.parse::<u128>().map_err(|_| invalid()))
@@ -345,7 +358,7 @@ pub struct SetTree {
     gaps: Vec<Vec<Digest>>,
 }
 
-fn zero_hashes(depth: usize) -> Vec<Digest> {
+pub(super) fn zero_hashes(depth: usize) -> Vec<Digest> {
     let mut zeros = vec![ZERO];
     for level in 0..depth {
         zeros.push(compress(&zeros[level], &zeros[level]));
@@ -353,7 +366,7 @@ fn zero_hashes(depth: usize) -> Vec<Digest> {
     zeros
 }
 
-fn levels(leaves: Vec<Digest>, zeros: &[Digest]) -> Vec<Vec<Digest>> {
+pub(super) fn levels(leaves: Vec<Digest>, zeros: &[Digest]) -> Vec<Vec<Digest>> {
     let mut levels = vec![leaves];
     for zero in &zeros[..zeros.len() - 1] {
         let below = levels.last().expect("levels start non-empty");
@@ -366,7 +379,7 @@ fn levels(leaves: Vec<Digest>, zeros: &[Digest]) -> Vec<Vec<Digest>> {
     levels
 }
 
-fn top(levels: &[Vec<Digest>], zeros: &[Digest]) -> Digest {
+pub(super) fn top(levels: &[Vec<Digest>], zeros: &[Digest]) -> Digest {
     levels
         .last()
         .and_then(|root| root.first())
@@ -386,6 +399,31 @@ fn gaps_of(values: &[u128]) -> Vec<Gap> {
         .collect()
 }
 
+/// The smallest approved depth whose tree holds `count` leaves with room to spare.
+pub(super) fn fit_depth(count: usize) -> Result<usize> {
+    SET_DEPTHS
+        .into_iter()
+        .find(|depth| count < 1usize << depth)
+        .ok_or_else(|| {
+            error(format!(
+                "{count} entries exceed the largest supported tree (2^{} leaves)",
+                SET_DEPTHS[SET_DEPTHS.len() - 1]
+            ))
+        })
+}
+
+/// The sibling digests from leaf `index` of `tree` up to the root of a depth-`depth` tree.
+pub(super) fn siblings_of(tree: &[Vec<Digest>], depth: usize, index: usize) -> Vec<Digest> {
+    let zeros = zero_hashes(depth);
+    (0..depth)
+        .map(|level| {
+            *tree[level]
+                .get((index >> level) ^ 1)
+                .unwrap_or(&zeros[level])
+        })
+        .collect()
+}
+
 impl SetTree {
     /// Build the trees for `values` (duplicates are ignored). Fails when a value does not fit `ty`
     /// or the set is too large for the largest approved depth.
@@ -395,16 +433,7 @@ impl SetTree {
             .map(|v| ty.encode(v))
             .collect::<Result<_>>()?;
         let values: Vec<u128> = sorted.into_iter().collect();
-        let depth = SET_DEPTHS
-            .into_iter()
-            .find(|depth| values.len() < 1usize << depth)
-            .ok_or_else(|| {
-                error(format!(
-                    "a set of {} values exceeds the largest supported tree (2^{} leaves)",
-                    values.len(),
-                    SET_DEPTHS[SET_DEPTHS.len() - 1]
-                ))
-            })?;
+        let depth = fit_depth(values.len())?;
         let zeros = zero_hashes(depth);
         let members = levels(values.iter().map(|v| member_leaf(ty, *v)).collect(), &zeros);
         let gaps = levels(
@@ -430,17 +459,6 @@ impl SetTree {
         }
     }
 
-    fn siblings(&self, tree: &[Vec<Digest>], index: usize) -> Vec<Digest> {
-        let zeros = zero_hashes(self.depth);
-        (0..self.depth)
-            .map(|level| {
-                *tree[level]
-                    .get((index >> level) ^ 1)
-                    .unwrap_or(&zeros[level])
-            })
-            .collect()
-    }
-
     /// The path proving `value` is in the set; fails when it is not.
     pub fn member_path(&self, value: impl Into<Number>) -> Result<SetPath> {
         let encoded = self.ty.encode(value.into())?;
@@ -450,7 +468,7 @@ impl SetTree {
             .map_err(|_| error("the value is not a member of the set"))?;
         Ok(SetPath {
             index: index as u64,
-            siblings: self.siblings(&self.members, index),
+            siblings: siblings_of(&self.members, self.depth, index),
             gap: None,
         })
     }
@@ -465,7 +483,7 @@ impl SetTree {
             .ok_or_else(|| error("the value is a member of the set"))?;
         Ok(SetPath {
             index: index as u64,
-            siblings: self.siblings(&self.gaps, index),
+            siblings: siblings_of(&self.gaps, self.depth, index),
             gap: Some(gaps_of(&self.values)[index]),
         })
     }

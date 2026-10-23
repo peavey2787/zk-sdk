@@ -245,7 +245,7 @@ pub(super) fn assignment(
     for slot in statement.slots() {
         let (mut limb, mut blinding) = match slot.source {
             Some(source) => (
-                statement.ty().limbs(openings[source].encoded()?),
+                openings[source].ty().limbs(openings[source].encoded()?),
                 openings[source].blinding().map(u64::from),
             ),
             None => (vec![0; limbs], [0; 8]),

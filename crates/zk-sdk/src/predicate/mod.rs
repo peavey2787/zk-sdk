@@ -20,6 +20,7 @@ mod bundle;
 mod claim;
 mod commit;
 mod compose;
+mod credential;
 #[cfg(test)]
 mod differential;
 mod distance;
@@ -31,11 +32,17 @@ mod semantics;
 mod set;
 mod statement;
 
-pub use api::{commit, describe, prove, set_commitment, set_path, verify, Committed};
+pub use api::{
+    commit, credential_issue, credential_present, describe, prove, set_commitment, set_path,
+    verify, Committed,
+};
 pub use arithmetic::MAX_TERMS;
 pub use claim::{Op, Operand, Predicate};
 pub use commit::{Commitment, Opening};
 pub use compose::{Claim, Conjunction, ConjunctionWitness, MAX_CLAIMS};
+pub use credential::{
+    Credential, CredentialEntry, CredentialIssuer, IssuerCommitment, Presentation,
+};
 pub use engine::{PredicateProof, Predicates, Witness};
 pub use int::{IntType, Number, Width};
 pub use set::{SetCommitment, SetPath, SetTree, SET_DEPTHS};

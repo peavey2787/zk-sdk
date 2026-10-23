@@ -128,6 +128,27 @@ pub fn predicate_set_path(
     predicate::set_path(int_type, values_json, value, absent).map_err(js)
 }
 
+/// Issue credentials from a JSON array of `{"attribute","serial","expiry"}`; returns JSON
+/// `{"issuer", "credentials"}`: publish the issuer, hand each holder their (secret) credential.
+#[wasm_bindgen]
+pub fn predicate_credential_issue(int_type: &str, entries_json: &str) -> Result<String, JsError> {
+    predicate::credential_issue(int_type, entries_json).map_err(js)
+}
+
+/// Present a credential to a verifier whose clock reads `now` (Unix seconds); `options_json` is
+/// `{}` or adds `also` claims and a `revoked` serial list. Returns JSON `{"claim", "secrets"}`
+/// ready for `predicate_prove`.
+#[wasm_bindgen]
+pub fn predicate_credential_present(
+    credential_json: &str,
+    now: &str,
+    options_json: &str,
+) -> Result<String, JsError> {
+    predicate::credential_present(credential_json, now, options_json)
+        .map(|presented| presented.to_json())
+        .map_err(js)
+}
+
 /// Prove a JSON claim with one secret per commitment, in claim order; a set claim takes its
 /// Merkle path as one more, final secret.
 #[wasm_bindgen]

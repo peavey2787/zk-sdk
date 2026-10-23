@@ -6,6 +6,7 @@ include "poseidon2.circom";
 function commit_domain() { return 1514344449; }
 function leaf_domain() { return 1514344450; }
 function gap_domain() { return 1514344451; }
+function credential_domain() { return 1514344452; }
 
 // Poseidon2 sponge (rate 8, capacity 8) over a message of M field elements, zero-padded to whole
 // blocks, with capacity initialised to [DOMAIN, M, 0 ...]. The digest is the first 8 state

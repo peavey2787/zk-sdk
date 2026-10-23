@@ -27,6 +27,7 @@ zk.verify(&claim, &proof)?;
 | Interval union | `in_any_range(c, [(lo, hi), ..])` (up to 4 closed intervals) | the committed value lies in at least one interval; which one stays hidden |
 | Negation | `claim.not()` | the exact complement of a compare, committed compare, sum, arithmetic, distance, member or absent claim (not available for opens, range, divide, union) |
 | Conjunction | `Conjunction::new(claims)`, `prove_all`, `verify_all` | every one of up to 8 claims holds |
+| Credential | `Predicate::credential(attribute, serial, expiry, issuer, now)` | the three commitments open one leaf of the issuer's published root, and `expiry >= now` |
 | Distance | `within_distance(x, y, (cx, cy), r)`, `beyond_distance`, `distance(.., op, r)` | the committed point `(x, y)` satisfies `(x-cx)² + (y-cy)² op r²` on exact integers |
 | Set membership | `member_of(commitment, set)` | the committed value is in the published set; which member stays hidden |
 | Set non-membership | `not_member_of(commitment, set)` | the committed value is not in the published set |
@@ -103,6 +104,12 @@ An operand is a commitment (`type:hex`) or a public decimal number.
 ## Composition
 
 A conjunction proof is one independent proof per claim, framed together; it verifies only when every part verifies against its own claim. A commitment shared by several claims is opened once and every part is verified against that same public digest, so all parts speak about one value. Two *different* commitments to equal values are not linked by this; add a `compare_committed(.., eq, ..)` claim. Cost is linear in the claims (time and proof size). Limits: AND only, since separate proofs cannot hide which branch holds; hidden-branch OR exists only as single circuits (`in_any_range`, set membership). A false claim prevents every proof. Secrets for a conjunction are the distinct openings in order of first appearance, then one set path per set claim.
+
+## Credentials
+
+`CredentialIssuer::new(type, entries)` commits to leaves `[attribute, serial, expiry]` under one published `IssuerCommitment` root. `credential(serial)` yields a holder's `Credential` (JSON-serialisable; a **bearer secret**: whoever holds it can present it). `Credential::present(now)` draws fresh blindings, so two presentations share no commitments and cannot be linked by them. `Presentation::all(also, revoked)` returns a `Conjunction`: the credential claim, any `also` claims about the attribute (for example `at_least` 18), and, with a revoked-serial `SetTree`, an `Absent` claim over the serial commitment. `now` is the verifier's clock, supplied by the verifier; the proof does not attest it.
+
+JSON: `credential_issue(type, entries_json)` returns `{"issuer","credentials"}`; `credential_present(credential, now, options)` returns `{"claim","secrets"}` for `prove`. CLI: `zk predicate issue` / `present`. Trust: the issuer is trusted to have issued honestly, and revocation is only as current as the published revoked set. Circuits `cred{8,20}_{32,64,128}` have roughly 15k to 28k constraints, so they run at 115 bits and need the explicit `with_minimum_bits(115)` opt-in on prover and verifier. Performance is not yet measured.
 
 `anyrange_32/64/128` have 2806, 3752 and 6560 constraints (all under the 8192 limit, so the strict 116-bit level applies).
 

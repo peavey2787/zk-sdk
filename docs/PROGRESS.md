@@ -24,7 +24,8 @@ Measured on Windows 11, native `x86_64-pc-windows-msvc`, rustc 1.98.1; wasm in h
 | CI for `3623bc0` (previous milestone) | **Validated** | `validate` job green on ubuntu-latest and windows-latest (incl. Linux circuit reproducibility and interop); the separate `performance` job fails as before (latency gate, `continue-on-error`) |
 | Composition: interval union (`anyrange`), `not`, conjunctions with shared openings | **Validated (Windows host)** | differential suite, `tests/compose.rs` real proofs (shared opening, reordered/truncated/damaged proofs rejected), browser self-test, native<->WASM interop; performance not yet measured |
 | Proximity/distance: committed 2D point vs public centre and radius, exact squares, six types | **Validated (Windows host)** | differential suite, `tests/distance.rs` real proofs, browser self-test, native<->WASM interop; performance section below |
-| Credentials, state transitions, composition | **Not started** | |
+| Credentials: issuer root, attribute/serial/expiry openings, expiry vs verifier clock, revocation via non-membership | **Validated (Windows host)** | differential suite, `tests/credentials.rs` real proofs, browser self-test, native<->WASM interop (issue on one backend, present on the other); 115-bit opt-in required; performance not measured |
+| State transitions | **Not started** | |
 
 ## Performance (Ryzen 7 5800X, Windows 11, default 116-bit full ZK, upstream parameters)
 

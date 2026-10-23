@@ -34,6 +34,14 @@ const commands = {
   "predicate-path": ([type, values, value, proves, path]) => {
     fs.writeFileSync(path, zk.predicate_set_path(type, fs.readFileSync(values, "utf8"), value, proves === "absent"));
   },
+  "predicate-issue": ([type, entries, out]) => {
+    fs.writeFileSync(out, zk.predicate_credential_issue(type, fs.readFileSync(entries, "utf8")));
+  },
+  "predicate-present": ([credential, now, options, claim, prefix]) => {
+    const presented = JSON.parse(zk.predicate_credential_present(fs.readFileSync(credential, "utf8"), now, fs.readFileSync(options, "utf8")));
+    fs.writeFileSync(claim, JSON.stringify(presented.claim));
+    presented.secrets.forEach((secret, index) => fs.writeFileSync(`${prefix}${index}`, secret));
+  },
   // ZK_MIN_BITS is the explicit authorization to run circuits below the 116-bit default.
   "predicate-prove": ([claim, proof, ...secrets]) => {
     authorize();

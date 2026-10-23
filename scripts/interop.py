@@ -1,5 +1,6 @@
 """Cross-backend interop matrix: native (zk CLI) and WebAssembly (Node) produce and verify each other's artifacts."""
 import itertools
+import json
 import os
 import shutil
 import subprocess
@@ -64,11 +65,24 @@ class Backend:
         else:
             run(["node", TOOL, NODE_PKG, "predicate-path", ty, values, value, proves, path])
 
-    def predicate_prove(self, claim, proof, secrets):
+    def credential_issue(self, ty, entries, out):
         if self.name == "native":
-            run([CLI, "predicate", "prove", "--claim", claim, "--secrets", ",".join(str(secret) for secret in secrets), "--proof", proof, "--min-bits", "115"])
+            run([CLI, "predicate", "issue", "--type", ty, "--entries", entries, "--out", out])
         else:
-            run(["node", TOOL, NODE_PKG, "predicate-prove", claim, proof, *secrets])
+            run(["node", TOOL, NODE_PKG, "predicate-issue", ty, entries, out])
+
+    def credential_present(self, credential, now, options, claim, prefix):
+        if self.name == "native":
+            run([CLI, "predicate", "present", "--credential", credential, "--now", now, "--options", options,
+                 "--claim", claim, "--secrets-prefix", prefix])
+        else:
+            run(["node", TOOL, NODE_PKG, "predicate-present", credential, now, options, claim, prefix])
+
+    def predicate_prove(self, claim, proof, secrets, ok=True):
+        if self.name == "native":
+            run([CLI, "predicate", "prove", "--claim", claim, "--secrets", ",".join(str(secret) for secret in secrets), "--proof", proof, "--min-bits", "115"], expect_ok=ok)
+        else:
+            run(["node", TOOL, NODE_PKG, "predicate-prove", claim, proof, *secrets], expect_ok=ok)
 
     def predicate_verify(self, claim, proof, ok=True):
         if self.name == "native":
@@ -177,6 +191,32 @@ def predicate_matrix(backends, tmp):
             print(f"PASS: predicate {name} produced by {producer.name}, verified by both (+negatives)")
 
 
+def credential_matrix(backends, tmp):
+    """Issue with one backend, present with the other, prove and verify across both."""
+    entries = tmp / "entries.json"
+    entries.write_text('[{"attribute":"30","serial":"7","expiry":"2000000000"}]')
+    options = tmp / "present-options.json"
+    options.write_text('{"also":[{"kind":"compare","commitment":"$attribute","op":"ge","bound":"18"}]}')
+    issuer, holder = backends.values()
+    for issuing, presenting in ((issuer, holder), (holder, issuer)):
+        issued = tmp / f"issued-{issuing.name}.json"
+        issuing.credential_issue("u32", entries, issued)
+        credential = tmp / f"credential-{issuing.name}.json"
+        credential.write_text(json.loads(issued.read_text())["credentials"][0])
+        claim, prefix = tmp / f"cred-{presenting.name}.claim.json", str(tmp / f"cred-{presenting.name}.s")
+        presenting.credential_present(credential, "1700000000", options, claim, prefix)
+        secrets = sorted(tmp.glob(f"cred-{presenting.name}.s[0-9]"))
+        late, late_prefix = tmp / f"late-{presenting.name}.claim.json", str(tmp / f"late-{presenting.name}.s")
+        presenting.credential_present(credential, "2000000001", options, late, late_prefix)
+        presenting.predicate_prove(late, tmp / "late.proof", sorted(tmp.glob(f"late-{presenting.name}.s[0-9]")), ok=False)
+        for producer in backends.values():
+            proof = tmp / f"cred-{issuing.name}-{presenting.name}-{producer.name}.proof"
+            producer.predicate_prove(claim, proof, secrets)
+            for verifier in backends.values():
+                verifier.predicate_verify(claim, proof)
+        print(f"PASS: credential issued by {issuing.name}, presented by {presenting.name}, proven and verified by both")
+
+
 def main():
     build()
     backends = {name: Backend(name) for name in ("native", "wasm")}
@@ -197,6 +237,7 @@ def main():
             verifier.verify(vk, statement, bad, ok=False)
             print(f"PASS: {circuit} produced by {producer.name}, verified by {verifier.name} (+negatives)")
     predicate_matrix(backends, tmp)
+    credential_matrix(backends, tmp)
     print("PASS: interop matrix (windows host; linux NOT VALIDATED here)")
 
 

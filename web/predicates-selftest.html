@@ -107,6 +107,19 @@ async function main() {
   checks.conjunction_rejects_other_claims = !(await accepts(both("64"), bothProof));
   checks.conjunction_false_part_unprovable = (await proves(both("19"), [age.secret])) === null;
 
+  // Issuer-backed credential presented with an attribute claim; expiry is checked against `now`.
+  const entries = JSON.stringify([{ attribute: "30", serial: "7", expiry: "2000000000" }]);
+  const issued = JSON.parse((await runner.run("predicateCredentialIssue", { type: "u32", entries })).result);
+  const present = async (now) => JSON.parse((await runner.run("predicateCredentialPresent", {
+    credential: issued.credentials[0], now, options: JSON.stringify({ also: [{ kind: "compare", commitment: "$attribute", op: "ge", bound: "18" }] }),
+  })).result);
+  const presented = await present("1700000000");
+  const credProof = await proves(presented.claim, presented.secrets);
+  checks.credential_accepted = credProof !== null && (await accepts(presented.claim, credProof));
+  const later = await present("2000000001");
+  checks.credential_other_time_rejected = !(await accepts(later.claim, credProof));
+  checks.credential_expired_unprovable = (await proves(later.claim, later.secrets)) === null;
+
   const bad = geProof.slice();
   bad[bad.length >> 1] ^= 0x55;
   checks.rejects_corrupted_proof = !(await accepts(ge, bad));

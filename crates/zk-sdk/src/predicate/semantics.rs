@@ -9,6 +9,7 @@ use std::cmp::Ordering;
 use std::slice::Iter;
 
 use super::claim::{Operand, Predicate};
+use super::credential;
 use super::exact::Int;
 use super::int::Number;
 use super::set::{self, SetPath};
@@ -177,6 +178,15 @@ impl Predicate {
                         side(ordering)
                     )
                 })
+            }
+            Self::Credential { issuer, now, .. } => {
+                let mut next = || {
+                    values.0.next().copied().ok_or_else(|| {
+                        ZkError::Predicate("fewer opened values than committed terms".into())
+                    })
+                };
+                let held = [next()?, next()?, next()?];
+                credential::refusal(issuer, *now, held, path)?
             }
             Self::Member { set, .. } | Self::Absent { set, .. } => {
                 let value = values.0.next().ok_or_else(|| {

@@ -16,6 +16,7 @@ const WIDTH: usize = 16;
 pub(super) const COMMIT_DOMAIN: u32 = 1_514_344_449;
 pub(super) const LEAF_DOMAIN: u32 = 1_514_344_450;
 pub(super) const GAP_DOMAIN: u32 = 1_514_344_451;
+pub(super) const CREDENTIAL_DOMAIN: u32 = 1_514_344_452;
 
 pub type Digest = [u32; DIGEST_ELEMENTS];
 

@@ -5,6 +5,7 @@
 use super::arithmetic;
 use super::claim::Predicate;
 use super::commit::Commitment;
+use super::credential;
 use super::distance;
 use super::int::{IntType, Number};
 use super::set::SetCommitment;
@@ -142,7 +143,7 @@ impl Statement {
         ))
     }
 
-    fn with_path(mut self, shape: PathShape) -> Self {
+    pub(super) fn with_path(mut self, shape: PathShape) -> Self {
         self.path = Some(shape);
         self
     }
@@ -269,6 +270,13 @@ impl Predicate {
             Self::Member { commitment, set } => set_statement(commitment, set, false),
             Self::Absent { commitment, set } => set_statement(commitment, set, true),
             Self::InAnyRange { commitment, ranges } => any_range_statement(commitment, ranges),
+            Self::Credential {
+                attribute,
+                serial,
+                expiry,
+                issuer,
+                now,
+            } => credential::statement(attribute, serial, expiry, issuer, *now),
             Self::Distance {
                 x,
                 y,

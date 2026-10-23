@@ -113,6 +113,42 @@ pub(super) const BUNDLED: &[Bundled] = &[
         sha256: "4a836f8d799e90fa2c8b94f36dd867a8489bdc853415d0772138c9f36689c1d5",
     },
     Bundled {
+        name: "cred20_128",
+        r1cs: include_bytes!("../../../../testdata/predicates/cred20_128.r1cs"),
+        sym: include_str!("../../../../testdata/predicates/cred20_128.sym"),
+        sha256: "824ceaf81d9a061af740897d8640624524e782d668fc563cd782618c124d817f",
+    },
+    Bundled {
+        name: "cred20_32",
+        r1cs: include_bytes!("../../../../testdata/predicates/cred20_32.r1cs"),
+        sym: include_str!("../../../../testdata/predicates/cred20_32.sym"),
+        sha256: "29cce66ec2c4929d5fabc1513039516a6c1e950c7a027bf31120d316560bbaa0",
+    },
+    Bundled {
+        name: "cred20_64",
+        r1cs: include_bytes!("../../../../testdata/predicates/cred20_64.r1cs"),
+        sym: include_str!("../../../../testdata/predicates/cred20_64.sym"),
+        sha256: "f1e19e5fa7fd814b49466c7883a30aad60551e03471fcca19d2131b321a119f0",
+    },
+    Bundled {
+        name: "cred8_128",
+        r1cs: include_bytes!("../../../../testdata/predicates/cred8_128.r1cs"),
+        sym: include_str!("../../../../testdata/predicates/cred8_128.sym"),
+        sha256: "fe98b3aa2419406ec471e2eaad6250be197cbaff9976859c43a538ecc0f09bc6",
+    },
+    Bundled {
+        name: "cred8_32",
+        r1cs: include_bytes!("../../../../testdata/predicates/cred8_32.r1cs"),
+        sym: include_str!("../../../../testdata/predicates/cred8_32.sym"),
+        sha256: "495a629e83feded4f8634a20293ff82b953a8e68b335332fb577dddc1013040f",
+    },
+    Bundled {
+        name: "cred8_64",
+        r1cs: include_bytes!("../../../../testdata/predicates/cred8_64.r1cs"),
+        sym: include_str!("../../../../testdata/predicates/cred8_64.sym"),
+        sha256: "ec36beddb263e31c2cbd5d033c0b7f771e3c9d72f33da09f8530ecc03fca700d",
+    },
+    Bundled {
         name: "distance_128",
         r1cs: include_bytes!("../../../../testdata/predicates/distance_128.r1cs"),
         sym: include_str!("../../../../testdata/predicates/distance_128.sym"),
