@@ -12,6 +12,7 @@ use crate::io::{read, read_text, sdk, timed, write};
 pub const USAGE: &str = "  zk predicate commit   --type u32|i32|u64|i64|u128|i128 --value N --commitment F --secret F
   zk predicate set      --type T --values F.json --commitment F
   zk predicate path     --type T --values F.json --value N --proves member|absent --path F
+  zk predicate transition --spec F.json --claim F.json --open F.json
   zk predicate issue    --type T --entries F.json --out F.json
   zk predicate present  --credential F --now UNIX_SECONDS [--options F.json] --claim F.json --secrets-prefix P
   zk predicate describe --claim F.json [--min-bits N]
@@ -72,6 +73,12 @@ fn engine(flags: &Flags) -> Result<Predicates, String> {
             .map(|bits| engine.with_minimum_bits(bits))
             .map_err(|_| format!("--min-bits must be a number of bits, got {bits}")),
     }
+}
+
+fn transition(flags: &Flags) -> Result<(), String> {
+    let lowered = predicate::transition_claim(&read_text(flags, "spec")?).map_err(sdk)?;
+    write(flags, "claim", lowered.claim.as_bytes())?;
+    write(flags, "open", lowered.open_json().as_bytes())
 }
 
 fn issue(flags: &Flags) -> Result<(), String> {
@@ -143,6 +150,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
         "commit" => commit(&flags(&["type", "value", "commitment", "secret"])?),
         "set" => set(&flags(&["type", "values", "commitment"])?),
         "path" => path(&flags(&["type", "values", "value", "proves", "path"])?),
+        "transition" => transition(&flags(&["spec", "claim", "open"])?),
         "issue" => issue(&flags(&["type", "entries", "out"])?),
         "present" => present(&flags(&[
             "credential",

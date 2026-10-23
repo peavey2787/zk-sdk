@@ -120,6 +120,18 @@ async function main() {
   checks.credential_other_time_rejected = !(await accepts(later.claim, credProof));
   checks.credential_expired_unprovable = (await proves(later.claim, later.secrets)) === null;
 
+  // Private state transition: balances 700/300 move to 960/30 (fee 10) under a guard.
+  const stepOf = (fee) => runner.run("predicateTransition", { spec: JSON.stringify({
+    old: [in1.commitment, in2.commitment], new: [out1.commitment, out2.commitment],
+    rules: [{ kind: "require", field: 0, op: "ge", bound: "500" }, { kind: "conserve", fields: [0, 1], fee }] }) }).then((r) => JSON.parse(r.result));
+  const step = await stepOf("10");
+  const byCommitment = new Map([in1, in2, out1, out2].map((c) => [c.commitment, c.secret]));
+  const stepProof = await proves(step.claim, step.open.map((c) => byCommitment.get(c)));
+  checks.transition_accepted = stepProof !== null && (await accepts(step.claim, stepProof));
+  checks.transition_rejects_other_fee = !(await accepts((await stepOf("11")).claim, stepProof));
+  const wrongFee = await stepOf("9");
+  checks.transition_rule_break_unprovable = (await proves(wrongFee.claim, wrongFee.open.map((c) => byCommitment.get(c)))) === null;
+
   const bad = geProof.slice();
   bad[bad.length >> 1] ^= 0x55;
   checks.rejects_corrupted_proof = !(await accepts(ge, bad));

@@ -25,7 +25,7 @@ Measured on Windows 11, native `x86_64-pc-windows-msvc`, rustc 1.98.1; wasm in h
 | Composition: interval union (`anyrange`), `not`, conjunctions with shared openings | **Validated (Windows host)** | differential suite, `tests/compose.rs` real proofs (shared opening, reordered/truncated/damaged proofs rejected), browser self-test, native<->WASM interop; performance not yet measured |
 | Proximity/distance: committed 2D point vs public centre and radius, exact squares, six types | **Validated (Windows host)** | differential suite, `tests/distance.rs` real proofs, browser self-test, native<->WASM interop; performance section below |
 | Credentials: issuer root, attribute/serial/expiry openings, expiry vs verifier clock, revocation via non-membership | **Validated (Windows host)** | differential suite, `tests/credentials.rs` real proofs, browser self-test, native<->WASM interop (issue on one backend, present on the other); 115-bit opt-in required; performance not measured |
-| State transitions | **Not started** | |
+| State transitions: guards, deltas, invariants, conservation, chaining | **Validated (Windows host)** | `tests/transition.rs` real proofs (rule breaks unprovable, tampered rules rejected, chained steps), browser self-test, native<->WASM interop; performance not measured |
 
 ## Performance (Ryzen 7 5800X, Windows 11, default 116-bit full ZK, upstream parameters)
 

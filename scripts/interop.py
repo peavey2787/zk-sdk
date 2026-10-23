@@ -65,6 +65,12 @@ class Backend:
         else:
             run(["node", TOOL, NODE_PKG, "predicate-path", ty, values, value, proves, path])
 
+    def transition(self, spec, claim, opens):
+        if self.name == "native":
+            run([CLI, "predicate", "transition", "--spec", spec, "--claim", claim, "--open", opens])
+        else:
+            run(["node", TOOL, NODE_PKG, "predicate-transition", spec, claim, opens])
+
     def credential_issue(self, ty, entries, out):
         if self.name == "native":
             run([CLI, "predicate", "issue", "--type", ty, "--entries", entries, "--out", out])
@@ -189,6 +195,27 @@ def predicate_matrix(backends, tmp):
                 verifier.predicate_verify(altered, proof, ok=False)
                 verifier.predicate_verify(claim, bad, ok=False)
             print(f"PASS: predicate {name} produced by {producer.name}, verified by both (+negatives)")
+    transition_matrix(backends, tmp, commitments, secrets)
+
+
+def transition_matrix(backends, tmp, commitments, secrets):
+    """Lower a state transition with each backend, then prove and verify across both."""
+    spec = tmp / "transition.json"
+    spec.write_text(json.dumps({
+        "old": [commitments["in1"], commitments["in2"]], "new": [commitments["out1"], commitments["out2"]],
+        "rules": [{"kind": "require", "field": 0, "op": "ge", "bound": "500"},
+                  {"kind": "conserve", "fields": [0, 1], "fee": "10"}]}))
+    by_commitment = {commitments[n]: secrets[n] for n in ("in1", "in2", "out1", "out2")}
+    for lowering in backends.values():
+        claim, opens = tmp / f"step-{lowering.name}.claim.json", tmp / f"step-{lowering.name}.open.json"
+        lowering.transition(spec, claim, opens)
+        order = [by_commitment[c] for c in json.loads(opens.read_text())]
+        for producer in backends.values():
+            proof = tmp / f"step-{lowering.name}-{producer.name}.proof"
+            producer.predicate_prove(claim, proof, order)
+            for verifier in backends.values():
+                verifier.predicate_verify(claim, proof)
+        print(f"PASS: transition lowered by {lowering.name}, proven and verified by both")
 
 
 def credential_matrix(backends, tmp):

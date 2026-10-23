@@ -12,6 +12,7 @@ use super::credential::{Credential, CredentialEntry, CredentialIssuer, Presentat
 use super::engine::{PredicateProof, Predicates, Witness};
 use super::int::{IntType, Number};
 use super::set::{SetPath, SetTree};
+use super::transition::{Rule, Transition};
 use crate::{Result, ZkError};
 
 /// A fresh commitment: publish `commitment`, keep `secret` private. The secret text is
@@ -274,6 +275,54 @@ fn witness_secrets(witness: &ConjunctionWitness) -> Vec<String> {
     let openings = witness.openings.iter().map(Opening::to_secret_json);
     let paths = witness.paths.iter().map(SetPath::to_json);
     openings.chain(paths).collect()
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TransitionSpec {
+    old: Vec<String>,
+    new: Vec<String>,
+    rules: Vec<Rule>,
+}
+
+/// A lowered transition: the claim to prove and the commitments whose secrets to pass, in order.
+pub struct LoweredTransition {
+    pub claim: String,
+    pub open: Vec<String>,
+}
+
+impl LoweredTransition {
+    pub fn open_json(&self) -> String {
+        serde_json::to_string(&self.open).expect("commitment texts always serialize")
+    }
+
+    pub fn to_json(&self) -> String {
+        let claim: serde_json::Value =
+            serde_json::from_str(&self.claim).expect("claims always serialize");
+        serde_json::json!({ "claim": claim, "open": self.open }).to_string()
+    }
+}
+
+/// Lower a private state transition, JSON `{"old":[commitment..],"new":[commitment..],"rules":[..]}`,
+/// to its claim. Returns JSON `{"claim": <conjunction>, "open": [<commitment to open, in secret
+/// order>]}` (see [`LoweredTransition`]): prove it with `prove`, passing one secret per `open` entry in that order.
+pub fn transition_claim(spec_json: &str) -> Result<LoweredTransition> {
+    let spec: TransitionSpec =
+        serde_json::from_str(spec_json).map_err(|e| ZkError::Format(e.to_string()))?;
+    let states = |texts: &[String]| -> Result<Vec<Commitment>> {
+        texts.iter().map(|t| Commitment::from_text(t)).collect()
+    };
+    let transition = Transition::new(states(&spec.old)?, states(&spec.new)?, &spec.rules)?;
+    let open: Vec<String> = transition
+        .claim()
+        .commitments()
+        .iter()
+        .map(Commitment::to_text)
+        .collect();
+    Ok(LoweredTransition {
+        claim: transition.claim().to_json(),
+        open,
+    })
 }
 
 pub fn verify(zk: &Predicates, claim_json: &str, proof: &[u8]) -> Result<()> {

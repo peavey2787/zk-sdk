@@ -20,11 +20,11 @@ Keep the facade at six operations. Mark a milestone done only when its acceptanc
 
 - [x] Predicate composition (interval unions, negation, shared-commitment conjunctions): Rust, browser, interop, differential-tested.
 - [x] Credentials (issuer-backed attribute, serial, expiry, unlinkable presentations, revocation via set non-membership; 115-bit opt-in): Rust, CLI, WASM, differential-tested.
+- [x] Private state transitions (rule vocabulary lowered to conjunctions; chaining by commitment identity): Rust, CLI, WASM, browser, interop.
 - [x] Private proximity/distance (committed 2D point vs public centre and radius, exact squares, all six types): Rust, browser, native/WASM interop, differential-tested.
 
 ## Next predicate families (in order; reuse the shared gadgets in `circuits/lib`)
 
-- [ ] Private state transitions with application-defined deterministic rules.
 
 ## Performance research (separate from correctness)
 

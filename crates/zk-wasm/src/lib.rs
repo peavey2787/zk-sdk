@@ -149,6 +149,15 @@ pub fn predicate_credential_present(
         .map_err(js)
 }
 
+/// Lower a private state transition `{"old":[..],"new":[..],"rules":[..]}` to JSON
+/// `{"claim", "open"}`: prove `claim` with one secret per `open` commitment, in that order.
+#[wasm_bindgen]
+pub fn predicate_transition(spec_json: &str) -> Result<String, JsError> {
+    predicate::transition_claim(spec_json)
+        .map(|lowered| lowered.to_json())
+        .map_err(js)
+}
+
 /// Prove a JSON claim with one secret per commitment, in claim order; a set claim takes its
 /// Merkle path as one more, final secret.
 #[wasm_bindgen]

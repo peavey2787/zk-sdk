@@ -23,6 +23,7 @@ const operations = {
   predicateSetPath: ({ type, values, value, absent }) => zk.predicate_set_path(type, values, value, absent),
   predicateCredentialIssue: ({ type, entries }) => zk.predicate_credential_issue(type, entries),
   predicateCredentialPresent: ({ credential, now, options }) => zk.predicate_credential_present(credential, now, options),
+  predicateTransition: ({ spec }) => zk.predicate_transition(spec),
   predicateMinimumBits: ({ bits }) => zk.predicate_set_minimum_bits(bits),
   predicateProve: ({ claim, secrets }) => zk.predicate_prove(claim, secrets),
   predicateVerify: ({ claim, proof }) => {

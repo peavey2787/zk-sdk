@@ -28,6 +28,7 @@ zk.verify(&claim, &proof)?;
 | Negation | `claim.not()` | the exact complement of a compare, committed compare, sum, arithmetic, distance, member or absent claim (not available for opens, range, divide, union) |
 | Conjunction | `Conjunction::new(claims)`, `prove_all`, `verify_all` | every one of up to 8 claims holds |
 | Credential | `Predicate::credential(attribute, serial, expiry, issuer, now)` | the three commitments open one leaf of the issuer's published root, and `expiry >= now` |
+| State transition | `Transition::new(old, new, rules)`, `claim()`, `witness(openings)` | the `new` state follows from the `old` one by the stated rules (see below) |
 | Distance | `within_distance(x, y, (cx, cy), r)`, `beyond_distance`, `distance(.., op, r)` | the committed point `(x, y)` satisfies `(x-cx)² + (y-cy)² op r²` on exact integers |
 | Set membership | `member_of(commitment, set)` | the committed value is in the published set; which member stays hidden |
 | Set non-membership | `not_member_of(commitment, set)` | the committed value is not in the published set |
@@ -104,6 +105,12 @@ An operand is a commitment (`type:hex`) or a public decimal number.
 ## Composition
 
 A conjunction proof is one independent proof per claim, framed together; it verifies only when every part verifies against its own claim. A commitment shared by several claims is opened once and every part is verified against that same public digest, so all parts speak about one value. Two *different* commitments to equal values are not linked by this; add a `compare_committed(.., eq, ..)` claim. Cost is linear in the claims (time and proof size). Limits: AND only, since separate proofs cannot hide which branch holds; hidden-branch OR exists only as single circuits (`in_any_range`, set membership). A false claim prevents every proof. Secrets for a conjunction are the distinct openings in order of first appearance, then one set path per set claim.
+
+## State transitions
+
+A state is a list of committed fields. `Transition::new(old, new, rules)` accepts matching lists (same length, same type per field) and up to 8 `Rule`s, each a deterministic relation over exact integers: `compare` (`new op old`, so `eq` keeps a field and `ge` lets it only grow), `add` / `sub` (a public delta), `require` (guard on the old state), `ensure` (invariant on the new state) and `conserve` (`Σold == Σnew + fee` over chosen fields). Rules lower to a conjunction of ordinary claims; no new circuit exists, so every rule keeps the security of the claim it lowers to (`conserve` over several fields exceeds 8192 constraints and needs the 115-bit opt-in). The proof reveals the two commitment lists and the rules, never the values. `follows(previous)` checks that a step starts at the commitments the previous one ended at, which is how steps chain.
+
+JSON: `transition_claim({"old":[..],"new":[..],"rules":[{"kind":"add","field":0,"delta":"1"}, ..]})` returns `{"claim","open"}`; pass one secret per `open` commitment, in that order, to `prove`. CLI: `zk predicate transition`. Limits: rules are chosen from this fixed vocabulary (not arbitrary code), the verifier must know the rules, and nothing here stops a prover replaying a step or branching one old state into two new ones; a ledger or nonce rule is the application's job.
 
 ## Credentials
 

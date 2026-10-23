@@ -31,10 +31,11 @@ mod int;
 mod semantics;
 mod set;
 mod statement;
+mod transition;
 
 pub use api::{
     commit, credential_issue, credential_present, describe, prove, set_commitment, set_path,
-    verify, Committed,
+    transition_claim, verify, Committed, LoweredTransition,
 };
 pub use arithmetic::MAX_TERMS;
 pub use claim::{Op, Operand, Predicate};
@@ -47,3 +48,4 @@ pub use engine::{PredicateProof, Predicates, Witness};
 pub use int::{IntType, Number, Width};
 pub use set::{SetCommitment, SetPath, SetTree, SET_DEPTHS};
 pub use statement::Statement;
+pub use transition::{Rule, Transition};

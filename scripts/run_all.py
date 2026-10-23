@@ -31,7 +31,7 @@ FAST = [
 FULL = [
     ("wasm-build", [PY, "scripts/build_wasm.py"]),
     ("browser", [PY, "scripts/browser_test.py"]),
-    ("browser-predicates", [PY, "scripts/browser_test.py", "predicates-selftest.html"]),
+    ("browser-predicates", [PY, "scripts/browser_test.py", "predicates-selftest.html", "1800"]),
     ("circuits", [PY, "scripts/build_circuits.py", "--check"]),
     ("interop", [PY, "scripts/interop.py"]),
     ("audit", CARGO + ["audit", "--deny", "warnings"]),

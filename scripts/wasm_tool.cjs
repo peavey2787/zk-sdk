@@ -34,6 +34,11 @@ const commands = {
   "predicate-path": ([type, values, value, proves, path]) => {
     fs.writeFileSync(path, zk.predicate_set_path(type, fs.readFileSync(values, "utf8"), value, proves === "absent"));
   },
+  "predicate-transition": ([spec, claim, open]) => {
+    const lowered = JSON.parse(zk.predicate_transition(fs.readFileSync(spec, "utf8")));
+    fs.writeFileSync(claim, JSON.stringify(lowered.claim));
+    fs.writeFileSync(open, JSON.stringify(lowered.open));
+  },
   "predicate-issue": ([type, entries, out]) => {
     fs.writeFileSync(out, zk.predicate_credential_issue(type, fs.readFileSync(entries, "utf8")));
   },
