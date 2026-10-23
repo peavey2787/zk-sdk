@@ -150,6 +150,16 @@ impl Predicate {
                 let remainder = values.operand(remainder)?;
                 division_refusal(&dividend, &divisor, &quotient, &remainder)
             }
+            Self::InAnyRange { ranges, .. } => {
+                let value = values.committed()?;
+                let inside = |[lo, hi]: &[Number; 2]| {
+                    value.compare(&Int::from(*lo)) != Ordering::Less
+                        && value.compare(&Int::from(*hi)) != Ordering::Greater
+                };
+                refuse_unless(ranges.iter().any(inside), || {
+                    "the committed value is in none of the intervals".into()
+                })
+            }
             Self::Distance {
                 center_x,
                 center_y,

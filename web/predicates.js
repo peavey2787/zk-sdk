@@ -7,7 +7,7 @@ const state = { secrets: [], proof: null };
 const ROWS = {
   valueA: "rowValueA", valueB: "rowValueB", op: "rowOp", bound: "rowBound", lo: "rowLo", hi: "rowHi",
   ends: "rowEnds", setValues: "rowSetValues", inputs: "rowInputs", outputs: "rowOutputs", fee: "rowFee", operands: "rowOperands",
-  centerX: "rowCenterX", centerY: "rowCenterY",
+  centerX: "rowCenterX", centerY: "rowCenterY", ranges: "rowRanges",
 };
 const DEFAULT_OPERANDS = { x: "300", y: "3", z: "30", t: "900", dividend: "47", divisor: "9", quotient: "5", remainder: "2" };
 const PUBLIC_BY_DEFAULT = new Set(["y", "divisor"]);
@@ -25,7 +25,7 @@ function form() {
   return {
     op: $("op").value, bound: text("bound"), lo: text("lo"), hi: text("hi"),
     loInclusive: $("loInclusive").checked, hiInclusive: $("hiInclusive").checked,
-    valueA: text("valueA"), valueB: text("valueB"), centerX: text("centerX"), centerY: text("centerY"),
+    valueA: text("valueA"), valueB: text("valueB"), centerX: text("centerX"), centerY: text("centerY"), ranges: text("ranges"),
     setValues: text("setValues"), inputs: text("inputs"), outputs: text("outputs"), fee: text("fee"), operands,
   };
 }

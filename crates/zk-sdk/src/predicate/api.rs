@@ -7,6 +7,7 @@ use zeroize::Zeroize;
 
 use super::claim::Predicate;
 use super::commit::{Commitment, Opening};
+use super::compose::{Claim, Conjunction, ConjunctionWitness};
 use super::engine::{PredicateProof, Predicates, Witness};
 use super::int::{IntType, Number};
 use super::set::{SetPath, SetTree};
@@ -43,7 +44,7 @@ pub fn commit(ty: &str, value: &str) -> Result<Committed> {
 }
 
 /// Parse the secrets, then overwrite their text whether or not parsing succeeded.
-fn witness(mut secrets: Vec<String>) -> Result<Witness> {
+fn openings(mut secrets: Vec<String>) -> Result<Vec<Opening>> {
     let openings: Result<Vec<Opening>> = secrets
         .iter()
         .map(|s| Opening::from_secret_json(s))
@@ -54,25 +55,50 @@ fn witness(mut secrets: Vec<String>) -> Result<Witness> {
             "provide one secret per committed value".into(),
         ));
     }
-    Ok(openings?.into())
+    openings
 }
 
 /// Prove the JSON claim with the given secrets (one per committed value, in claim order). A set
 /// membership or absence claim takes its Merkle path as one more, final secret. The secret texts
 /// are taken by value and overwritten once parsed.
-pub fn prove(zk: &Predicates, claim_json: &str, mut secrets: Vec<String>) -> Result<Vec<u8>> {
-    let claim = Predicate::from_json(claim_json)?;
+pub fn prove(zk: &Predicates, claim_json: &str, secrets: Vec<String>) -> Result<Vec<u8>> {
+    match Claim::from_json(claim_json)? {
+        Claim::Single(claim) => prove_single(zk, &claim, secrets),
+        Claim::All(claim) => prove_all(zk, &claim, secrets),
+    }
+}
+
+fn prove_single(zk: &Predicates, claim: &Predicate, mut secrets: Vec<String>) -> Result<Vec<u8>> {
     let path = if claim.statement()?.path().is_some() {
         Some(take_path(&mut secrets))
     } else {
         None
     };
-    let witness = witness(secrets);
-    let mut witness = witness?;
+    let mut witness: Witness = openings(secrets)?.into();
     if let Some(path) = path {
         witness = witness.with_path(path?);
     }
-    Ok(zk.prove(&claim, witness)?.as_bytes().to_vec())
+    Ok(zk.prove(claim, witness)?.as_bytes().to_vec())
+}
+
+/// A conjunction takes one secret per distinct commitment (in order of first appearance across
+/// its claims), then one Merkle path per set claim.
+fn prove_all(zk: &Predicates, claim: &Conjunction, mut secrets: Vec<String>) -> Result<Vec<u8>> {
+    let distinct = claim.commitments().len();
+    if secrets.len() < distinct {
+        secrets.iter_mut().for_each(Zeroize::zeroize);
+        return Err(ZkError::Predicate(format!(
+            "the conjunction needs {distinct} opening secret(s) before any set paths"
+        )));
+    }
+    let mut paths = secrets.split_off(distinct);
+    let parsed: Result<Vec<SetPath>> = paths.iter().map(|p| SetPath::from_json(p)).collect();
+    paths.iter_mut().for_each(Zeroize::zeroize);
+    let witness = ConjunctionWitness {
+        openings: openings(secrets)?,
+        paths: parsed?,
+    };
+    Ok(zk.prove_all(claim, witness)?.as_bytes().to_vec())
 }
 
 /// Remove the final secret and parse it as a set path, overwriting its text.
@@ -109,22 +135,37 @@ pub fn set_path(int_type: &str, values_json: &str, value: &str, absent: bool) ->
 }
 
 pub fn verify(zk: &Predicates, claim_json: &str, proof: &[u8]) -> Result<()> {
-    zk.verify(
-        &Predicate::from_json(claim_json)?,
-        &PredicateProof::from_bytes(proof.to_vec()),
-    )
+    let proof = PredicateProof::from_bytes(proof.to_vec());
+    match Claim::from_json(claim_json)? {
+        Claim::Single(claim) => zk.verify(&claim, &proof),
+        Claim::All(claim) => zk.verify_all(&claim, &proof),
+    }
 }
 
 /// Circuit name, attained security level and public inputs of a claim, for display and
 /// interoperability checks.
 pub fn describe(zk: &Predicates, claim_json: &str) -> Result<String> {
-    let statement = Predicate::from_json(claim_json)?.statement()?;
-    Ok(format!(
-        "{} {}-bit {:?}",
-        statement.circuit(),
-        zk.security_bits(statement.circuit())?,
-        statement.public_inputs()
-    ))
+    let describe_one = |claim: &Predicate| -> Result<String> {
+        let statement = claim.statement()?;
+        Ok(format!(
+            "{} {}-bit {:?}",
+            statement.circuit(),
+            zk.security_bits(statement.circuit())?,
+            statement.public_inputs()
+        ))
+    };
+    match Claim::from_json(claim_json)? {
+        Claim::Single(claim) => describe_one(&claim),
+        Claim::All(all) => Ok(all
+            .claims()
+            .iter()
+            .map(describe_one)
+            .collect::<Result<Vec<_>>>()?
+            .join(
+                "
+",
+            )),
+    }
 }
 
 #[cfg(test)]

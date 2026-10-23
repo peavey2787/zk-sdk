@@ -36,6 +36,7 @@ FAMILIES = {
     "sum4": ("arithmetic", "WeightedSum", SUM_PUBLICS, ", 4"),
     "sum8": ("arithmetic", "WeightedSum", SUM_PUBLICS, ", 8"),
     "arith": ("arithmetic", "MulAdd", OPERANDS + ", signed, accept_lt, accept_eq, accept_gt, divide", ""),
+    "anyrange": ("union", "InAnyRange", "commitment, signed, enabled, lo, hi", ""),
     "distance": ("proximity", "Distance", "x_commitment, y_commitment, signed, center_x, center_y, accept_lt, accept_eq, accept_gt, radius_sq", ""),
 }
 # Merkle set circuits exist for each supported depth (leaves = 2^depth); keep in step with

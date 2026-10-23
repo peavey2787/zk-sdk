@@ -95,6 +95,18 @@ async function main() {
   checks.distance_just_outside_unprovable = (await proves(near("4"), [px.secret, py.secret])) === null;
   checks.distance_swapped_openings_unprovable = (await proves(near("5"), [py.secret, px.secret])) === null;
 
+  // Interval unions and conjunctions over a shared commitment (raw claim JSON for the latter).
+  const unionOf = (ranges) => buildClaim("any_range", { ranges }, [age.commitment]);
+  const unionProof = await proves(unionOf("1:5, 18:25"), [age.secret]);
+  checks.interval_union_accepted = unionProof !== null && (await accepts(unionOf("1:5, 18:25"), unionProof));
+  checks.interval_union_rejects_other_intervals = !(await accepts(unionOf("1:5, 21:25"), unionProof));
+  checks.interval_union_outside_unprovable = (await proves(unionOf("1:5, 21:25"), [age.secret])) === null;
+  const both = (bound) => ({ kind: "all", claims: [ge, buildClaim("compare", { op: "le", bound }, [age.commitment])] });
+  const bothProof = await proves(both("65"), [age.secret]);
+  checks.conjunction_accepted = bothProof !== null && (await accepts(both("65"), bothProof));
+  checks.conjunction_rejects_other_claims = !(await accepts(both("64"), bothProof));
+  checks.conjunction_false_part_unprovable = (await proves(both("19"), [age.secret])) === null;
+
   const bad = geProof.slice();
   bad[bad.length >> 1] ^= 0x55;
   checks.rejects_corrupted_proof = !(await accepts(ge, bad));

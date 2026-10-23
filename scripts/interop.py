@@ -115,6 +115,13 @@ def predicate_claims(c):
         f'{{"kind":"distance","x":"{c["in2"]}","y":"{c["out2"]}","center_x":"0","center_y":"0",'
         f'"op":"le","radius":"{radius}"}}'
     )
+    union = lambda hi: (
+        f'{{"kind":"in_any_range","commitment":"{c["in2"]}","ranges":[["100","200"],["250","{hi}"]]}}'
+    )
+    both = lambda bound: (
+        f'{{"kind":"all","claims":[{{"kind":"compare","commitment":"{c["in2"]}","op":"ge","bound":"{bound}"}},'
+        f'{{"kind":"compare_committed","left":"{c["in2"]}","right":"{c["out2"]}","op":"gt"}}]}}'
+    )
     return {
         "member_u64": (member(c["set"]), member(c["other_set"]), ["in2", "member_path"]),
         "absent_u64": (absent(c["set"]), absent(c["other_set"]), ["in1", "absent_path"]),
@@ -125,6 +132,8 @@ def predicate_claims(c):
         "conserve_u64": (conserve(10), conserve(11), ["in1", "in2", "out1", "out2"]),
         "product_u64": (product(3), product(4), ["in2", "out2", "out1"]),
         "divide_u64": (divide(9), divide(10), ["rem_dividend", "quotient", "remainder"]),
+        "union_u64": (union(350), union(351), ["in2"]),
+        "all_u64": (both(100), both(101), ["in2", "out2"]),
         "distance_u64": (distance(305), distance(300), ["in2", "out2"]),
     }
 

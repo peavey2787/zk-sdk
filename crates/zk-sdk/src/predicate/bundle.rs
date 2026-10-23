@@ -46,7 +46,7 @@ mod tests {
 
     #[test]
     fn every_bundled_circuit_matches_its_approved_hash() {
-        assert_eq!(BUNDLED.len(), 36);
+        assert_eq!(BUNDLED.len(), 39);
         for bundled in BUNDLED {
             lookup(bundled.name).unwrap();
         }

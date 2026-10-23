@@ -24,6 +24,9 @@ zk.verify(&claim, &proof)?;
 | Conservation | `conserve(inputs, outputs, fees)`, `conserve_with_supply(inputs, outputs, fees, minted, burned)` | `Σinputs (+ minted) == Σoutputs + fees (+ burned)`; mint and burn are explicit public amounts |
 | Product | `multiply(x, y, product)`, `arithmetic(x, y, z, op, t)` | `x·y + z op t` on exact integers; each operand is public (`3u8`) or committed |
 | Division | `divide(dividend, divisor, quotient, remainder)` | `dividend = quotient·divisor + remainder`, `divisor > 0`, `0 <= remainder < divisor` |
+| Interval union | `in_any_range(c, [(lo, hi), ..])` (up to 4 closed intervals) | the committed value lies in at least one interval; which one stays hidden |
+| Negation | `claim.not()` | the exact complement of a compare, committed compare, sum, arithmetic, distance, member or absent claim (not available for opens, range, divide, union) |
+| Conjunction | `Conjunction::new(claims)`, `prove_all`, `verify_all` | every one of up to 8 claims holds |
 | Distance | `within_distance(x, y, (cx, cy), r)`, `beyond_distance`, `distance(.., op, r)` | the committed point `(x, y)` satisfies `(x-cx)² + (y-cy)² op r²` on exact integers |
 | Set membership | `member_of(commitment, set)` | the committed value is in the published set; which member stays hidden |
 | Set non-membership | `not_member_of(commitment, set)` | the committed value is not in the published set |
@@ -87,6 +90,8 @@ zk.verify(&claim, &proof)?;
 {"kind":"arithmetic","x":"u64:..","y":"3","z":"0","t":"u64:..","op":"eq"}
 {"kind":"divide","dividend":"u64:..","divisor":"9","quotient":"u64:..","remainder":"u64:.."}
 {"kind":"distance","x":"i32:..","y":"i32:..","center_x":"0","center_y":"0","op":"le","radius":"5"}
+{"kind":"in_any_range","commitment":"u32:..","ranges":[["1","5"],["18","65"]]}
+{"kind":"all","claims":[{"kind":"compare",...},{"kind":"in_any_range",...}]}
 {"kind":"member","commitment":"u64:..","set":"set:u64:8:<128 hex>"}
 {"kind":"absent","commitment":"u64:..","set":"set:u64:8:<128 hex>"}
 ```
@@ -94,6 +99,12 @@ zk.verify(&claim, &proof)?;
 An operand is a commitment (`type:hex`) or a public decimal number.
 
 `op` is one of `lt le gt ge eq ne`. Numbers are decimal strings so 128-bit values survive JSON.
+
+## Composition
+
+A conjunction proof is one independent proof per claim, framed together; it verifies only when every part verifies against its own claim. A commitment shared by several claims is opened once and every part is verified against that same public digest, so all parts speak about one value. Two *different* commitments to equal values are not linked by this; add a `compare_committed(.., eq, ..)` claim. Cost is linear in the claims (time and proof size). Limits: AND only, since separate proofs cannot hide which branch holds; hidden-branch OR exists only as single circuits (`in_any_range`, set membership). A false claim prevents every proof. Secrets for a conjunction are the distinct openings in order of first appearance, then one set path per set claim.
+
+`anyrange_32/64/128` have 2806, 3752 and 6560 constraints (all under the 8192 limit, so the strict 116-bit level applies).
 
 ## CLI
 

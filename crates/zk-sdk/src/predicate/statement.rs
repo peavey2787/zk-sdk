@@ -268,6 +268,7 @@ impl Predicate {
             } => arithmetic::divide(*dividend, *divisor, *quotient, *remainder),
             Self::Member { commitment, set } => set_statement(commitment, set, false),
             Self::Absent { commitment, set } => set_statement(commitment, set, true),
+            Self::InAnyRange { commitment, ranges } => any_range_statement(commitment, ranges),
             Self::Distance {
                 x,
                 y,
@@ -278,6 +279,42 @@ impl Predicate {
             } => distance::statement(x, y, (*center_x, *center_y), *op, *radius),
         }
     }
+}
+
+/// The most intervals one `InAnyRange` claim can union (the `anyrange` circuit's slots).
+pub const MAX_RANGES: usize = 4;
+
+fn any_range_statement(commitment: &Commitment, ranges: &[[Number; 2]]) -> Result<Statement> {
+    if ranges.is_empty() || ranges.len() > MAX_RANGES {
+        return Err(ZkError::Predicate(format!(
+            "a union takes 1 to {MAX_RANGES} intervals, got {}",
+            ranges.len()
+        )));
+    }
+    let ty = commitment.ty();
+    let mut bounds = [Vec::new(), Vec::new()];
+    for slot in 0..MAX_RANGES {
+        for (end, column) in bounds.iter_mut().enumerate() {
+            column.extend(match ranges.get(slot) {
+                Some(range) => ty.limbs(ty.encode(range[end])?),
+                None => vec![0; ty.width.limbs()],
+            });
+        }
+    }
+    let [lo, hi] = bounds;
+    let enabled = (0..MAX_RANGES).map(|slot| u64::from(slot < ranges.len()));
+    Statement::prefixed(
+        "anyrange",
+        vec![*commitment],
+        &[""],
+        vec![
+            digest("commitment", commitment),
+            signed(ty),
+            array("enabled", enabled.collect()),
+            array("lo", lo),
+            array("hi", hi),
+        ],
+    )
 }
 
 fn set_statement(commitment: &Commitment, set: &SetCommitment, absent: bool) -> Result<Statement> {

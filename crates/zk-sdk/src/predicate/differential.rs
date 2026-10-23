@@ -308,6 +308,32 @@ fn distances_agree_with_the_semantics() {
     run("distance", 40, distance_case);
 }
 
+/// One to four intervals, with the probe inside one of them about half of the time.
+fn any_range_case(ty: IntType, rng: &mut Rng) -> Case {
+    let ranges: Vec<(Number, Number)> = (0..1 + rng.below(4))
+        .map(|_| {
+            let (a, b) = (any(ty, rng), any(ty, rng));
+            if rng.below(5) == 0 {
+                (a, a)
+            } else {
+                (a, b)
+            }
+        })
+        .collect();
+    let probe = match rng.below(3) {
+        0 => ranges[rng.below(ranges.len())].0,
+        1 => ranges[rng.below(ranges.len())].1,
+        _ => any(ty, rng),
+    };
+    let (commitment, opening) = commit(ty, probe, rng);
+    Case::new(Predicate::in_any_range(commitment, ranges), vec![opening])
+}
+
+#[test]
+fn interval_unions_agree_with_the_semantics() {
+    run("any_range", 40, any_range_case);
+}
+
 fn fits(ty: IntType, case: &Case) -> bool {
     case.claim.statement().is_ok() && case.openings.iter().all(|o| o.ty() == ty)
 }

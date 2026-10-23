@@ -19,6 +19,7 @@ mod arithmetic;
 mod bundle;
 mod claim;
 mod commit;
+mod compose;
 #[cfg(test)]
 mod differential;
 mod distance;
@@ -34,6 +35,7 @@ pub use api::{commit, describe, prove, set_commitment, set_path, verify, Committ
 pub use arithmetic::MAX_TERMS;
 pub use claim::{Op, Operand, Predicate};
 pub use commit::{Commitment, Opening};
+pub use compose::{Claim, Conjunction, ConjunctionWitness, MAX_CLAIMS};
 pub use engine::{PredicateProof, Predicates, Witness};
 pub use int::{IntType, Number, Width};
 pub use set::{SetCommitment, SetPath, SetTree, SET_DEPTHS};

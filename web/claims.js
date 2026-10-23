@@ -12,6 +12,7 @@ export const FAMILIES = {
   total: { title: "Total of committed values vs a public bound", fields: ["inputs", "op", "bound"] },
   member: { title: "Committed value is in a published set", fields: ["valueA", "setValues"] },
   absent: { title: "Committed value is not in a published set", fields: ["valueA", "setValues"] },
+  any_range: { title: "Committed value within any of up to four intervals", fields: ["valueA", "ranges"] },
   distance: {
     title: "Committed point (x, y) vs a public centre and radius",
     fields: ["valueA", "valueB", "centerX", "centerY", "bound", "op"],
@@ -25,6 +26,9 @@ export const FAMILIES = {
 };
 
 const list = (text) => text.split(",").map((item) => item.trim()).filter(Boolean);
+
+// "1:5, 10:20" -> [["1","5"],["10","20"]]
+export const rangePairs = (text) => list(text).map((pair) => pair.split(":").map((end) => end.trim()));
 
 // The set's members as the JSON array the SDK builds the Merkle trees from.
 export const setValuesJson = (form) => JSON.stringify(list(form.setValues));
@@ -76,6 +80,8 @@ export function buildClaim(family, form, commitments) {
     }
     case "total":
       return { kind: "sum", plus: commitments, minus: [], plus_constant: "0", minus_constant: form.bound, op: form.op };
+    case "any_range":
+      return { kind: "in_any_range", commitment: commitments[0], ranges: rangePairs(form.ranges) };
     case "distance":
       return {
         kind: "distance", x: commitments[0], y: commitments[1], center_x: form.centerX,

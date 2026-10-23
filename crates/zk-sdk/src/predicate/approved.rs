@@ -41,6 +41,24 @@ pub(super) const BUNDLED: &[Bundled] = &[
         sha256: "bb06039f30bb286a363b00483d058b7781870a3694b8315d2b59a9c6b5899ac3",
     },
     Bundled {
+        name: "anyrange_128",
+        r1cs: include_bytes!("../../../../testdata/predicates/anyrange_128.r1cs"),
+        sym: include_str!("../../../../testdata/predicates/anyrange_128.sym"),
+        sha256: "51193787a7a5b2871c30b3fb1e4086992c2eb66e22dcf81402f2b5c3ee49957c",
+    },
+    Bundled {
+        name: "anyrange_32",
+        r1cs: include_bytes!("../../../../testdata/predicates/anyrange_32.r1cs"),
+        sym: include_str!("../../../../testdata/predicates/anyrange_32.sym"),
+        sha256: "6e16305b98672965b6325e4718119a68fa4ec9e967807a19708d44caa09e9325",
+    },
+    Bundled {
+        name: "anyrange_64",
+        r1cs: include_bytes!("../../../../testdata/predicates/anyrange_64.r1cs"),
+        sym: include_str!("../../../../testdata/predicates/anyrange_64.sym"),
+        sha256: "a05070145cc2e9a8c00799c110e284cf6319f93f44534c790c3ce42de7338270",
+    },
+    Bundled {
         name: "arith_128",
         r1cs: include_bytes!("../../../../testdata/predicates/arith_128.r1cs"),
         sym: include_str!("../../../../testdata/predicates/arith_128.sym"),

@@ -24,6 +24,12 @@ pub struct Witness {
 }
 
 impl Witness {
+    /// Why `claim` is false for these openings and path, or `None` when it holds.
+    pub(super) fn refusal(&self, claim: &Predicate) -> Result<Option<String>> {
+        let values: Vec<_> = self.openings.iter().map(Opening::value).collect();
+        claim.refusal(&values, self.path.as_ref())
+    }
+
     /// Add the Merkle path a set membership or absence claim needs.
     pub fn with_path(mut self, path: SetPath) -> Self {
         self.path = Some(path);

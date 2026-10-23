@@ -160,6 +160,13 @@ fn cases(ty: IntType) -> zk_sdk::Result<Vec<Case>> {
         vec![point_x, point_y],
         None,
     ));
+    let (union, union_opening) = Commitment::commit(ty, 12u8)?;
+    cases.push((
+        "anyrange",
+        Predicate::in_any_range(union, [(1u8, 5u8), (10, 15), (18, 25)]),
+        vec![union_opening],
+        None,
+    ));
     cases.extend(set_cases(ty, 100, 8)?);
     cases.extend(set_cases(ty, 300, 20)?);
     Ok(cases)

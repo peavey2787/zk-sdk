@@ -27,6 +27,18 @@ pub enum Op {
 }
 
 impl Op {
+    /// The operator that accepts exactly what this one rejects.
+    pub fn negate(self) -> Self {
+        match self {
+            Self::Lt => Self::Ge,
+            Self::Le => Self::Gt,
+            Self::Gt => Self::Le,
+            Self::Ge => Self::Lt,
+            Self::Eq => Self::Ne,
+            Self::Ne => Self::Eq,
+        }
+    }
+
     pub(super) fn flags(self) -> [u64; 3] {
         match self {
             Self::Lt => [1, 0, 0],
@@ -163,6 +175,12 @@ pub enum Predicate {
     Absent {
         commitment: Commitment,
         set: SetCommitment,
+    },
+    /// The committed value lies in at least one of up to four closed intervals `[lo, hi]`; which
+    /// interval matched stays hidden.
+    InAnyRange {
+        commitment: Commitment,
+        ranges: Vec<[Number; 2]>,
     },
     /// The committed point `(x, y)` is at Euclidean distance `op` `radius` from a public centre:
     /// `(x - center_x)^2 + (y - center_y)^2  op  radius^2`, on exact integers.
@@ -351,6 +369,56 @@ impl Predicate {
     /// The committed value is not in `set` (prove with a path from `SetTree::absence_path`).
     pub fn not_member_of(commitment: Commitment, set: SetCommitment) -> Self {
         Self::Absent { commitment, set }
+    }
+
+    /// The committed value is in at least one of the closed intervals `(lo, hi)`.
+    pub fn in_any_range<A: Into<Number>, B: Into<Number>>(
+        commitment: Commitment,
+        ranges: impl IntoIterator<Item = (A, B)>,
+    ) -> Self {
+        Self::InAnyRange {
+            commitment,
+            ranges: ranges
+                .into_iter()
+                .map(|(lo, hi)| [lo.into(), hi.into()])
+                .collect(),
+        }
+    }
+
+    /// The claim that holds exactly when this one does not, where that is one claim of the
+    /// library: comparisons, sums, products and distances flip their operator, and membership
+    /// becomes absence. Claims that are not negatable (knowledge of an opening, ranges, division,
+    /// interval unions) are an error; express a range's complement with `in_any_range`.
+    pub fn not(&self) -> Result<Self> {
+        let mut negated = self.clone();
+        match &mut negated {
+            Self::Compare { op, .. }
+            | Self::CompareCommitted { op, .. }
+            | Self::Sum { op, .. }
+            | Self::Arithmetic { op, .. }
+            | Self::Distance { op, .. } => *op = op.negate(),
+            Self::Member { commitment, set } => {
+                negated = Self::Absent {
+                    commitment: *commitment,
+                    set: *set,
+                }
+            }
+            Self::Absent { commitment, set } => {
+                negated = Self::Member {
+                    commitment: *commitment,
+                    set: *set,
+                }
+            }
+            Self::Opens { .. }
+            | Self::Range { .. }
+            | Self::Divide { .. }
+            | Self::InAnyRange { .. } => {
+                return Err(ZkError::Predicate(
+                    "this claim has no single-claim negation".into(),
+                ))
+            }
+        }
+        Ok(negated)
     }
 
     /// The committed point is within `radius` of `center` (inclusive).
