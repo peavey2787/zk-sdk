@@ -35,4 +35,4 @@ Warnings are errors, no dead or duplicated code, and the portable workflow lives
 
 ## Optimized native build (optional)
 
-`python scripts/build_optimized.py` builds `zk` for x86-64-v3 (AVX2/BMI2) into `target/optimized`. It is faster but will not run on older CPUs; the default `cargo build --release` stays portable.
+`python scripts/build_optimized.py` builds `zk` for x86-64-v3 (AVX2/BMI2) and installs it as `target/release/zk-avx2`; the portable `zk` then delegates to it on CPUs that support it (`ZK_PORTABLE=1` forces the portable path). `python scripts/serve_web.py` serves `web/` cross-origin isolated so the browser uses the threaded bundle.

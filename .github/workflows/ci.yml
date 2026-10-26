@@ -15,6 +15,8 @@ jobs:
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown
       - run: cargo install wasm-pack cargo-audit --locked
+      - name: Pinned nightly for the threaded WASM bundle (scripts/build_wasm.py)
+        run: rustup toolchain install nightly-2026-09-25 --profile minimal --component rust-src
       - name: Full validation
         shell: bash
         run: python scripts/run_all.py full
@@ -32,6 +34,8 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - run: cargo install wasm-pack --locked
+      - name: Pinned nightly for the threaded WASM bundle (scripts/build_wasm.py)
+        run: rustup toolchain install nightly-2026-09-25 --profile minimal --component rust-src
       - name: Performance gates (native and browser)
         shell: bash
         run: python scripts/run_all.py perf

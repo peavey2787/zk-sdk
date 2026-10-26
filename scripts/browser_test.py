@@ -17,6 +17,13 @@ CANDIDATES = [
 
 
 class QuietHandler(http.server.SimpleHTTPRequestHandler):
+    """Serves the pages cross-origin isolated, as a deployment must for threaded proving."""
+
+    def end_headers(self):
+        self.send_header("Cross-Origin-Opener-Policy", "same-origin")
+        self.send_header("Cross-Origin-Embedder-Policy", "require-corp")
+        super().end_headers()
+
     def log_message(self, *args):
         pass
 

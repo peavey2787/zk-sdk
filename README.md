@@ -62,11 +62,11 @@ target/release/zk verify --vk vk.bin --expected 1,18 --proof proof.bin
 ## Browser
 
 ```sh
-python scripts/build_wasm.py          # needs wasm-pack and the wasm32-unknown-unknown target
-python -m http.server 8000 --directory web
+python scripts/build_wasm.py          # needs wasm-pack, wasm32-unknown-unknown, and nightly-2026-09-25 with rust-src
+python scripts/serve_web.py 8000
 ```
 
-Open `http://localhost:8000`. Witness generation, setup, proving and verification run in a Web Worker, all inside the page; private inputs and keys are never sent anywhere. Proofs and verifying keys can be exported, imported and deliberately corrupted. Proving is single-threaded (no threads are assumed), so it is slower than native (see PROGRESS). Any static host works; the page has no server component.
+Open `http://localhost:8000`. Witness generation, setup, proving and verification run in a Web Worker, all inside the page; private inputs and keys are never sent anywhere. Proofs and verifying keys can be exported, imported and deliberately corrupted. A cross-origin-isolated page (`Cross-Origin-Opener-Policy: same-origin`, `Cross-Origin-Embedder-Policy: require-corp`, as `serve_web.py` sends) proves on every core with the threaded bundle; any other host falls back to the single-threaded one, which is several times slower (see PROGRESS). Any static host works; the page has no server component.
 
 ## Security policy
 

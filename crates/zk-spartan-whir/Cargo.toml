@@ -15,6 +15,10 @@ serde.workspace = true
 bincode.workspace = true
 web-time.workspace = true
 
-# Native builds use every core; wasm32 stays single-threaded (no shared memory assumed).
+[features]
+# Multi-threaded proving on wasm32 (shared memory; see scripts/build_wasm.py). Native always is.
+parallel = ["spartan-whir/parallel"]
+
+# Native builds use every core; wasm32 is single-threaded unless built with `parallel`.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 spartan-whir = { workspace = true, features = ["parallel"] }

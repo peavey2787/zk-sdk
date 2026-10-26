@@ -6,6 +6,10 @@ use wasm_bindgen::prelude::*;
 use zk_sdk::predicate::{self, Predicates};
 use zk_sdk::{portable, SecurityPolicy, Zk};
 
+/// `initThreadPool(n)` for the threaded bundle: start `n` proving threads before any other call.
+#[cfg(all(target_arch = "wasm32", feature = "threads"))]
+pub use wasm_bindgen_rayon::init_thread_pool;
+
 fn js(error: impl std::fmt::Display) -> JsError {
     JsError::new(&error.to_string())
 }

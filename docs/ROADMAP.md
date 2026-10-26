@@ -36,6 +36,8 @@ Keep the facade at six operations. Mark a milestone done only when its acceptanc
 - [ ] Run `run-all-linux.sh full` on Linux and add Linux-produced interop (currently NOT VALIDATED).
 - [ ] Run the browser test on Firefox and Safari.
 - [ ] Sweep the security range on the other circuits and add reference-witness differential tests for them.
-- [ ] Multi-threaded browser proving (needs `SharedArrayBuffer` and cross-origin isolation); today it is single-threaded.
+- [x] Multi-threaded browser proving (`web/pkg-threads`, cross-origin-isolated pages) and native AVX2 auto-dispatch.
+- [ ] WASM SIMD: Plonky3 has no wasm32 packed field, so browser arithmetic stays scalar (upstream work).
+- [ ] Groth16 (BN254, ark-groth16) backend for the same predicate statements: public Hermez Powers of Tau plus a documented per-circuit phase-2 contribution.
 - [ ] Replace `bincode` 1.x when upstream moves, then drop the audit ignores.
 - [ ] Spark matrix-closing mode (only DirectSparse is wired up).

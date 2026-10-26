@@ -1,11 +1,23 @@
 // Runs all cryptography off the main thread. Everything here is local to the browser:
 // the private inputs, witness, secrets and proving key are never sent over the network.
-import init, * as zk from "./pkg/zk_wasm.js";
+//
+// A cross-origin-isolated page (COOP same-origin + COEP require-corp) gets the threaded bundle,
+// which proves on every core; any other page gets the single-threaded one. Both run the same
+// code and parameters, so their proofs are interchangeable.
+const threads = self.crossOriginIsolated && typeof SharedArrayBuffer === "function" ? navigator.hardwareConcurrency : 1;
+let zk;
 
-const ready = init();
+const ready = (async () => {
+  const bundle = await import(threads > 1 ? "./pkg-threads/zk_wasm.js" : "./pkg/zk_wasm.js");
+  const exports = await bundle.default();
+  if (threads > 1) await bundle.initThreadPool(threads);
+  zk = bundle;
+  return exports;
+})();
 
 const operations = {
   capabilities: () => zk.capabilities(),
+  threads: () => threads,
   setup: ({ r1cs, bits, soundness }) => {
     const keys = zk.setup(r1cs, bits, soundness);
     return { proving: keys.proving, verifying: keys.verifying };

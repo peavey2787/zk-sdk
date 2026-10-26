@@ -84,7 +84,9 @@ Browser extras: wasm linear memory 16-63 MiB (cumulative over the run, one worke
 - Native portable: **missed** (1.06-1.77 s p50; p95 1.7-3.0 s).
 - Browser WASM: **missed** by 7-20x (6.8-19.6 s). Dominated by single-threaded proof-of-work grinding and unvectorised field arithmetic; the application must prove asynchronously (the demo does, in a Worker).
 
-The optimized build is opt-in and refuses to start on CPUs without AVX2/BMI2. Nothing above lowers any security parameter. Investigation of the browser path (WASM threads for grinding, upstream-approved schedules, other transparent backends) is open and tracked in ROADMAP; each option needs its own soundness review.
+**Update: AVX2 auto-dispatch and threaded browser proving (same machine, same parameters).** The portable `zk` now delegates to an installed `zk-avx2` sibling on AVX2/BMI2 CPUs. Native compare, 10 samples: portable p50 ~1045 ms (656-2478), dispatched p50 ~246 ms (133-350); proofs cross-verify between the two binaries. Browser on a cross-origin-isolated page (threaded bundle, 16 workers): compare prove p50 ~2.2 s (1.2-3.1 s) versus 13-20 s single-threaded; the 44-check browser predicate self-test went from 653 s to 53 s. Still above the 1000 ms browser ceiling: WASM has no Plonky3 vector code, so field arithmetic stays scalar. Pages without cross-origin isolation get the single-threaded numbers above.
+
+The standalone optimized binary refuses to start on CPUs without AVX2/BMI2; the portable `zk` only delegates to it when the CPU has both. Nothing above lowers any security parameter. Investigation of the browser path (WASM threads for grinding, upstream-approved schedules, other transparent backends) is open and tracked in ROADMAP; each option needs its own soundness review.
 
 **End-to-end soundness of the configured 116-bit target is still not independently recomputed.** Nothing here claims 116-bit post-quantum security.
 

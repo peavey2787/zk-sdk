@@ -15,4 +15,5 @@
 
 !/testdata/**
 /web/pkg/
+/web/pkg-threads/
 /web/circuits/

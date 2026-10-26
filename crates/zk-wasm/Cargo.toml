@@ -10,6 +10,11 @@ publish = false
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+# The threaded bundle (web/pkg-threads): rayon over Web Workers on shared memory. Needs a nightly
+# build with atomics and a cross-origin-isolated page; scripts/build_wasm.py builds both bundles.
+threads = ["dep:wasm-bindgen-rayon", "zk-sdk/parallel"]
+
 [dependencies]
 zk-sdk = { path = "../zk-sdk" }
 wasm-bindgen = "0.2"
@@ -18,3 +23,4 @@ wasm-bindgen = "0.2"
 # Browser CSPRNG (crypto.getRandomValues). There is no fallback RNG: if the browser lacks one,
 # proving fails instead of silently using weak randomness.
 getrandom = { version = "0.4", features = ["wasm_js"] }
+wasm-bindgen-rayon = { version = "1.3", optional = true, features = ["no-bundler"] }

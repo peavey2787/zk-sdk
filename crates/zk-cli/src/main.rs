@@ -1,6 +1,7 @@
 //! `zk`: file-based adapter over the SDK facade. Contains no cryptography of its own.
 mod args;
 mod commands;
+mod dispatch;
 mod io;
 mod predicate;
 
@@ -24,6 +25,9 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(optimized) = dispatch::optimized_sibling() {
+        return dispatch::delegate(optimized, &args);
+    }
     match commands::run(&args) {
         Ok(()) => ExitCode::SUCCESS,
         Err(message) => {

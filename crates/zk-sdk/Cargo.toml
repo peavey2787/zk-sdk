@@ -6,6 +6,9 @@ license.workspace = true
 rust-version.workspace = true
 description = "Six-operation backend-independent zero-knowledge SDK facade (native and wasm32)"
 
+[features]
+parallel = ["zk-spartan-whir/parallel"]
+
 [dependencies]
 zk-core = { path = "../zk-core" }
 zk-spartan-whir = { path = "../zk-spartan-whir" }

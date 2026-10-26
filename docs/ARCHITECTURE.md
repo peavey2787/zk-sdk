@@ -17,7 +17,8 @@
 - Artifacts are framed (`ZKSDK002` magic, format version 2, length-prefixed, hard size limits). Backends use bounded bincode, fixed-int little-endian.
 - Verification always calls the upstream verifier after `verifying_key.authenticate()`; the expected public inputs are supplied by the caller, never read from the proof.
 - File I/O (`zk_sdk::files`) is compiled out on wasm32. Randomness on wasm comes from the browser CSPRNG through `getrandom`'s `wasm_js` backend; there is no fallback.
-- Native builds enable upstream `parallel` (rayon); wasm32 is single-threaded, so it runs in a worker without `SharedArrayBuffer`. The default build is portable x86-64. `scripts/build_optimized.py` is an opt-in AVX2/BMI2 build (`target/optimized`) whose `zk` exits with a clear message on CPUs lacking them. Proof bytes are identical across these configurations.
+- Native builds enable upstream `parallel` (rayon). The default `zk` is portable x86-64; `scripts/build_optimized.py` adds an AVX2/BMI2 `zk-avx2` beside it, and the portable `zk` hands each invocation to it when the CPU supports both (`ZK_PORTABLE=1` opts out; `crates/zk-cli/src/dispatch.rs`). Library users choose with `RUSTFLAGS=-C target-cpu=...`.
+- The browser has two bundles: `web/pkg` (single-threaded, any page) and `web/pkg-threads` (rayon over Web Workers on shared memory, built with a pinned nightly and a rebuilt std). `web/worker.js` loads the threaded one only on a cross-origin-isolated page. Proofs are interchangeable across every configuration: the code and parameters are the same, only instruction selection and threading differ.
 - WHIR parameters are upstream's recommended ones, unmodified (including proof-of-work grinding).
 - `prove` returns per-phase timings (`ProveOutput::phases`): decode_key, prepare_key, import_witness, spartan_whir_prove, encode_proof.
 
