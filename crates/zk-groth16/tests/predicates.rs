@@ -1,10 +1,28 @@
-//! Real Groth16 proofs for every bundled BN254 predicate circuit against the snarkjs phase-2 keys:
-//! honest statements prove and verify, false ones cannot be proven, and a proof never verifies for
-//! different public signals or a different circuit.
+//! Real Groth16 proofs for the core BN254 predicate circuits under an ephemeral trusted setup made
+//! from the published phase 1: honest statements prove and verify, false ones cannot be proven, and
+//! a proof never verifies for different public signals or a different circuit.
 
+mod common;
+
+use std::sync::OnceLock;
 use std::time::Instant;
 
-use zk_groth16::{circuits, commit, random_scalar, Circuit, FieldInputs, Fr, PROOF_BYTES};
+use zk_groth16::{circuits, commit, random_scalar, FieldInputs, Fr, Setup, PROOF_BYTES};
+
+const FAMILIES: [&str; 4] = ["open", "compare", "range", "compare_committed"];
+
+/// One setup for every family at every width, authorized for verification.
+fn setup() -> &'static Setup {
+    static SETUP: OnceLock<Setup> = OnceLock::new();
+    SETUP.get_or_init(|| {
+        let names: Vec<String> = WIDTHS
+            .iter()
+            .flat_map(|(bits, _)| FAMILIES.iter().map(move |f| format!("{f}_{bits}")))
+            .collect();
+        let names: Vec<&str> = names.iter().map(String::as_str).collect();
+        common::trusted(common::create(&names, "predicates test"))
+    })
+}
 
 /// Unsigned value as `limbs` little-endian 16-bit limbs.
 fn limbs(value: u128, count: usize) -> Vec<u16> {
@@ -78,10 +96,10 @@ fn compare_inputs(
 }
 
 fn prove_and_verify(name: &str, inputs: Inputs) {
-    let circuit = Circuit::bundled(name).unwrap();
+    let circuit = setup().circuit(name).unwrap();
     let out = circuit.prove(&inputs.0).unwrap();
     assert_eq!(out.proof.len(), PROOF_BYTES);
-    let vk = circuit.verifying_key();
+    let vk = setup().verifying_key(name).unwrap();
     vk.verify(&out.public_signals, &out.proof).unwrap();
     let mut other = out.public_signals.clone();
     other[0] += Fr::from(1u64);
@@ -136,7 +154,7 @@ fn cases(bits: u32, count: usize) -> Vec<(String, Inputs)> {
 
 #[test]
 fn every_family_proves_and_verifies_at_every_width() {
-    assert_eq!(circuits().count(), 12);
+    assert_eq!(circuits().count(), 45);
     for (bits, count) in WIDTHS {
         for (name, inputs) in cases(bits, count) {
             prove_and_verify(&name, inputs);
@@ -163,7 +181,7 @@ fn benchmark() {
     for (bits, count) in WIDTHS {
         for (name, inputs) in cases(bits, count) {
             let started = Instant::now();
-            let circuit = Circuit::bundled(&name).unwrap();
+            let circuit = setup().circuit(&name).unwrap();
             let load_ms = started.elapsed().as_secs_f64() * 1e3;
             let mut times = Vec::with_capacity(samples);
             let mut out = circuit.prove(&inputs.0).unwrap();
@@ -172,7 +190,7 @@ fn benchmark() {
                 out = circuit.prove(&inputs.0).unwrap();
                 times.push(started.elapsed().as_secs_f64() * 1e3);
             }
-            let vk = circuit.verifying_key();
+            let vk = setup().verifying_key(&name).unwrap();
             let started = Instant::now();
             vk.verify(&out.public_signals, &out.proof).unwrap();
             let verify_ms = started.elapsed().as_secs_f64() * 1e3;
@@ -197,7 +215,7 @@ fn benchmark() {
 #[test]
 fn false_statements_and_wrong_openings_cannot_be_proven() {
     let (name, inputs) = compare_inputs(64, 4, 17, 18, GE);
-    let circuit = Circuit::bundled(&name).unwrap();
+    let circuit = setup().circuit(&name).unwrap();
     assert!(circuit.prove(&inputs.0).is_err(), "17 >= 18");
     let (_, inputs) = compare_inputs(64, 4, 20, 18, GE);
     let forged = inputs.set("blinding[0]", Fr::from(1u64));
@@ -207,8 +225,8 @@ fn false_statements_and_wrong_openings_cannot_be_proven() {
 #[test]
 fn a_proof_is_bound_to_its_circuit() {
     let (name, inputs) = compare_inputs(32, 2, 20, 18, GE);
-    let out = Circuit::bundled(&name).unwrap().prove(&inputs.0).unwrap();
-    let other = Circuit::bundled("compare_64").unwrap().verifying_key();
+    let out = setup().circuit(&name).unwrap().prove(&inputs.0).unwrap();
+    let other = setup().verifying_key("compare_64").unwrap();
     assert!(other.verify(&out.public_signals, &out.proof).is_err());
 }
 

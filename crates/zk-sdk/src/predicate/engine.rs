@@ -12,7 +12,7 @@ use zk_witness::Field as _;
 
 use super::bundle;
 use super::claim::Predicate;
-use super::commit::{Opening, DIGEST_ELEMENTS};
+use super::commit::Opening;
 use super::groth16::Groth16Circuits;
 use super::scheme::Scheme;
 use super::set::SetPath;
@@ -126,6 +126,13 @@ impl Predicates {
             entries: Mutex::default(),
             groth16: Groth16Circuits::default(),
         }
+    }
+
+    /// Prove and verify Groth16 claims with `setup` (the ceremony artifacts and, optionally, keys
+    /// of the caller's own contribution) instead of the ceremony directory found by default.
+    pub fn with_groth16(mut self, setup: zk_groth16::Setup) -> Self {
+        self.groth16 = Groth16Circuits::new(setup);
+        self
     }
 
     /// Explicitly authorize circuits upstream can only set up below the policy's target to run
@@ -300,7 +307,7 @@ pub(super) fn assignment(
             ),
             None => (
                 vec![0; limbs],
-                vec![Fr::from(0u8); unused_blinding(statement)],
+                vec![Fr::from(0u8); statement.scheme().digest_len()],
             ),
         };
         let mut limb: Vec<Fr> = limb.drain(..).map(Fr::from).collect();
@@ -314,18 +321,10 @@ pub(super) fn assignment(
             ZkError::Predicate("this claim needs a set path in the witness".into())
         })?;
         for (name, value) in path.circuit_inputs(statement.ty(), shape.absent, shape.depth)? {
-            inputs.insert(name, Fr::from(value));
+            inputs.insert(name, value);
         }
     }
     Ok(inputs)
-}
-
-/// The blinding width of an unused slot: unused slots exist only in Spartan-WHIR circuits.
-fn unused_blinding(statement: &Statement) -> usize {
-    match statement.scheme() {
-        Scheme::SpartanWhir => DIGEST_ELEMENTS,
-        Scheme::Groth16 => 1,
-    }
 }
 
 fn put_array(inputs: &mut Signals, name: &str, values: &[Fr]) {

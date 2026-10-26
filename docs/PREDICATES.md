@@ -19,7 +19,7 @@ A commitment is made for one scheme, and every claim about it is proved by that 
 | Scheme | Commitment | Proof | Prove (native, p50) | Trust and security | Families |
 |---|---|---|---|---|---|
 | `Scheme::SpartanWhir` (default; `Commitment::commit`) | `u64:<64 hex>` | 631-824 KB | 0.16-0.35 s (AVX2) | transparent, post-quantum, 116-bit policy | all |
-| `Scheme::Groth16` (`Commitment::commit_in(Scheme::Groth16, ..)`) | `groth16:u64:<64 hex>` | 136 B | 20-60 ms | trusted setup ([GROTH16_SETUP](GROTH16_SETUP.md)), not post-quantum, ~100-bit BN254 | opens, compare, range, compare_committed, and conjunctions of them |
+| `Scheme::Groth16` (`Commitment::commit_in(Scheme::Groth16, ..)`) | `groth16:u64:<64 hex>` | 136 B | 20-60 ms | trusted setup ([GROTH16_SETUP](GROTH16_SETUP.md)), not post-quantum, ~100-bit BN254 | every family, including sets and credentials (sets and issuers are built per scheme with `--scheme`); trusted setups made by their users, verifiers authorize setups |
 
 The verifier derives the scheme from the commitments in the claim it trusts, never from the proof. Schemes never mix within a claim, a Groth16 opening never opens a Spartan-WHIR commitment (or the reverse), and a claim whose family has no Groth16 circuit is refused before anything is proved. CLI: `zk predicate commit --scheme groth16 ...`; browser: the "Proof system" selector, or `predicateCommit` with `scheme: "groth16"`. Groth16's end-to-end soundness, like Spartan-WHIR's, has not been independently verified.
 

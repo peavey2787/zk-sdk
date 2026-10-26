@@ -16,15 +16,26 @@ STATEMENTS = {"age_over": "1,18", "arithmetic": "1603,5", "millionaires": "1"}
 WRONG = {"age_over": "0,18", "arithmetic": "1603,6", "millionaires": "0"}
 
 
-def run(command, *, expect_ok=True):
-    done = subprocess.run([str(c) for c in command], capture_output=True, text=True)
+def run(command, *, expect_ok=True, env=None):
+    done = subprocess.run([str(c) for c in command], capture_output=True, text=True, env={**os.environ, **(env or {})})
     if (done.returncode == 0) != expect_ok:
         raise SystemExit(f"FAIL: {' '.join(map(str, command))}\n{done.stdout}{done.stderr}")
+    return done.stdout
 
 
 class Backend:
     def __init__(self, name):
         self.name = name
+        self.groth16 = None  # (key pack, trust list) once a Groth16 setup exists
+
+    def groth16_flags(self, trust=None):
+        """The key pack and trust list: native flags, or the WASM tool's environment."""
+        if self.groth16 is None:
+            return [], {}
+        keys, trusted = self.groth16[0], trust or self.groth16[1]
+        if self.name == "native":
+            return ["--groth16-keys", keys, "--groth16-trust", trusted], {}
+        return [], {"ZK_GROTH16_KEYS": str(keys), "ZK_GROTH16_TRUST": str(trusted)}
 
     def setup(self, r1cs, pk, vk):
         if self.name == "native":
@@ -54,17 +65,18 @@ class Backend:
         else:
             run(["node", TOOL, NODE_PKG, "predicate-commit", scheme, ty, value, commitment, secret])
 
-    def set_commitment(self, ty, values, commitment):
+    def set_commitment(self, scheme, ty, values, commitment):
         if self.name == "native":
-            run([CLI, "predicate", "set", "--type", ty, "--values", values, "--commitment", commitment])
+            run([CLI, "predicate", "set", "--scheme", scheme, "--type", ty, "--values", values, "--commitment", commitment])
         else:
-            run(["node", TOOL, NODE_PKG, "predicate-set", ty, values, commitment])
+            run(["node", TOOL, NODE_PKG, "predicate-set", scheme, ty, values, commitment])
 
-    def set_path(self, ty, values, value, proves, path):
+    def set_path(self, scheme, ty, values, value, proves, path):
         if self.name == "native":
-            run([CLI, "predicate", "path", "--type", ty, "--values", values, "--value", value, "--proves", proves, "--path", path])
+            run([CLI, "predicate", "path", "--scheme", scheme, "--type", ty, "--values", values, "--value", value,
+                 "--proves", proves, "--path", path])
         else:
-            run(["node", TOOL, NODE_PKG, "predicate-path", ty, values, value, proves, path])
+            run(["node", TOOL, NODE_PKG, "predicate-path", scheme, ty, values, value, proves, path])
 
     def transition(self, spec, claim, opens):
         if self.name == "native":
@@ -72,11 +84,11 @@ class Backend:
         else:
             run(["node", TOOL, NODE_PKG, "predicate-transition", spec, claim, opens])
 
-    def credential_issue(self, ty, entries, out):
+    def credential_issue(self, scheme, ty, entries, out):
         if self.name == "native":
-            run([CLI, "predicate", "issue", "--type", ty, "--entries", entries, "--out", out])
+            run([CLI, "predicate", "issue", "--scheme", scheme, "--type", ty, "--entries", entries, "--out", out])
         else:
-            run(["node", TOOL, NODE_PKG, "predicate-issue", ty, entries, out])
+            run(["node", TOOL, NODE_PKG, "predicate-issue", scheme, ty, entries, out])
 
     def credential_present(self, credential, now, options, claim, prefix):
         if self.name == "native":
@@ -86,16 +98,18 @@ class Backend:
             run(["node", TOOL, NODE_PKG, "predicate-present", credential, now, options, claim, prefix])
 
     def predicate_prove(self, claim, proof, secrets, ok=True):
+        flags, env = self.groth16_flags()
         if self.name == "native":
-            run([CLI, "predicate", "prove", "--claim", claim, "--secrets", ",".join(str(secret) for secret in secrets), "--proof", proof, "--min-bits", "115"], expect_ok=ok)
+            run([CLI, "predicate", "prove", "--claim", claim, "--secrets", ",".join(str(secret) for secret in secrets), "--proof", proof, "--min-bits", "115", *flags], expect_ok=ok)
         else:
-            run(["node", TOOL, NODE_PKG, "predicate-prove", claim, proof, *secrets], expect_ok=ok)
+            run(["node", TOOL, NODE_PKG, "predicate-prove", claim, proof, *secrets], expect_ok=ok, env=env)
 
-    def predicate_verify(self, claim, proof, ok=True):
+    def predicate_verify(self, claim, proof, ok=True, trust=None):
+        flags, env = self.groth16_flags(trust)
         if self.name == "native":
-            run([CLI, "predicate", "verify", "--claim", claim, "--proof", proof, "--min-bits", "115"], expect_ok=ok)
+            run([CLI, "predicate", "verify", "--claim", claim, "--proof", proof, "--min-bits", "115", *flags], expect_ok=ok)
         else:
-            run(["node", TOOL, NODE_PKG, "predicate-verify", claim, proof], expect_ok=ok)
+            run(["node", TOOL, NODE_PKG, "predicate-verify", claim, proof], expect_ok=ok, env=env)
 
 
 def build():
@@ -112,6 +126,26 @@ def corrupt(source, target):
     data = bytearray(Path(source).read_bytes())
     data[len(data) // 2] ^= 0x55
     Path(target).write_bytes(data)
+
+
+def groth16_setup(backends, tmp, claims, tag):
+    """A trusted setup for the circuits `claims` need, made across both backends: WASM creates it,
+    native adds a contribution, both verify it (and refuse a damaged copy), and native writes the
+    trust list. Every backend proves and verifies with it from then on."""
+    native, wasm = backends["native"], backends["wasm"]
+    needed = {name for claim in claims for name in run(["node", TOOL, NODE_PKG, "groth16-circuits", claim]).strip().split(",")}
+    first, keys, trust = tmp / f"{tag}-first.pack", tmp / f"{tag}.pack", tmp / f"{tag}.trust"
+    run(["node", TOOL, NODE_PKG, "groth16-new", ",".join(sorted(needed - {""})), first, "wasm contributor"])
+    run([CLI, "groth16", "contribute", "--keys", first, "--out", keys, "--name", "native contributor"])
+    run(["node", TOOL, NODE_PKG, "groth16-verify", keys])
+    run([CLI, "groth16", "verify", "--keys", keys, "--trust-out", trust])
+    bad = tmp / f"{tag}-bad.pack"
+    corrupt(keys, bad)
+    run(["node", TOOL, NODE_PKG, "groth16-verify", bad], expect_ok=False)
+    run([CLI, "groth16", "verify", "--keys", bad], expect_ok=False)
+    for backend in backends.values():
+        backend.groth16 = (keys, trust)
+    print(f"PASS: groth16 setup {tag} created by wasm, extended by native, verified by both (+damaged copy refused)")
 
 
 def predicate_claims(c):
@@ -133,14 +167,17 @@ def predicate_claims(c):
         f'{{"kind":"divide","dividend":"{c["rem_dividend"]}","divisor":"{divisor}",'
         f'"quotient":"{c["quotient"]}","remainder":"{c["remainder"]}"}}'
     )
-    member = lambda root: f'{{"kind":"member","commitment":"{c["in2"]}","set":"{root}"}}'
+    member = lambda root, p="": f'{{"kind":"member","commitment":"{c[p + "in2"]}","set":"{root}"}}'
     absent = lambda root: f'{{"kind":"absent","commitment":"{c["in1"]}","set":"{root}"}}'
     distance = lambda radius: (
         f'{{"kind":"distance","x":"{c["in2"]}","y":"{c["out2"]}","center_x":"0","center_y":"0",'
         f'"op":"le","radius":"{radius}"}}'
     )
-    union = lambda hi: (
-        f'{{"kind":"in_any_range","commitment":"{c["in2"]}","ranges":[["100","200"],["250","{hi}"]]}}'
+    union = lambda hi, p="": (
+        f'{{"kind":"in_any_range","commitment":"{c[p + "in2"]}","ranges":[["100","200"],["250","{hi}"]]}}'
+    )
+    g_product = lambda y: (
+        f'{{"kind":"arithmetic","x":"{c["g_in2"]}","y":"{y}","z":"{c["g_out2"]}","t":"{c["g_out1"]}","op":"lt"}}'
     )
     both = lambda bound: (
         f'{{"kind":"all","claims":[{{"kind":"compare","commitment":"{c["in2"]}","op":"ge","bound":"{bound}"}},'
@@ -164,6 +201,9 @@ def predicate_claims(c):
         "groth16_range_i128": (rng(-9, "g_"), rng(-8, "g_"), ["g_wide"]),
         "groth16_pair_i64": (pair("lt", "g_"), pair("gt", "g_"), ["g_low", "g_high"]),
         "groth16_all": (g16_all(18), g16_all(19), ["g_age", "g_low", "g_high"]),
+        "groth16_product_u64": (g_product(3), g_product(4), ["g_in2", "g_out2", "g_out1"]),
+        "groth16_union_u64": (union(350, "g_"), union(351, "g_"), ["g_in2"]),
+        "groth16_member_u64": (member(c["g_set"], "g_"), member(c["g_other_set"], "g_"), ["g_in2", "g_member_path"]),
     }
 
 
@@ -173,7 +213,7 @@ def predicate_matrix(backends, tmp):
     specs = {"age": ("u32", "20"), "wide": ("i128", "-7"), "low": ("i64", "-3"), "high": ("i64", "9"),
              "in1": ("u64", "700"), "in2": ("u64", "300"), "out1": ("u64", "960"), "out2": ("u64", "30"),
              "rem_dividend": ("u64", "47"), "quotient": ("u64", "5"), "remainder": ("u64", "2")}
-    groth16 = {f"g_{name}": spec for name, spec in specs.items() if name in ("age", "wide", "low", "high")}
+    groth16 = {f"g_{name}": spec for name, spec in specs.items() if name in ("age", "wide", "low", "high", "in2", "out1", "out2")}
     commitments, secrets = {}, {}
     for name, (ty, value) in {**specs, **groth16}.items():
         maker = next(makers)
@@ -184,17 +224,25 @@ def predicate_matrix(backends, tmp):
     set_values.write_text('["300","301","900"]')
     other_values = tmp / "other-set.json"
     other_values.write_text('["300","302","900"]')
-    for name, values, out in (("set", set_values, "set"), ("other_set", other_values, "other_set")):
-        commitment = tmp / f"{out}.c"
-        next(makers).set_commitment("u64", values, commitment)
-        commitments[name] = commitment.read_text()
-    for name, value, proves in (("member_path", "300", "member"), ("absent_path", "700", "absent")):
+    for prefix, scheme in (("", "spartan-whir"), ("g_", "groth16")):
+        for name, values in (("set", set_values), ("other_set", other_values)):
+            commitment = tmp / f"{prefix}{name}.c"
+            next(makers).set_commitment(scheme, "u64", values, commitment)
+            commitments[prefix + name] = commitment.read_text()
+    for name, scheme, value, proves in (("member_path", "spartan-whir", "300", "member"),
+                                        ("absent_path", "spartan-whir", "700", "absent"),
+                                        ("g_member_path", "groth16", "300", "member")):
         secrets[name] = tmp / f"{name}.json"
-        next(makers).set_path("u64", set_values, value, proves, secrets[name])
+        next(makers).set_path(scheme, "u64", set_values, value, proves, secrets[name])
+    untrusted = tmp / "untrusted.trust"
+    untrusted.write_text("00" * 32 + "\n")
+    claims = {}
     for name, (claim_json, altered_json, openings) in predicate_claims(commitments).items():
-        claim, altered = tmp / f"{name}.claim.json", tmp / f"{name}.altered.json"
-        claim.write_text(claim_json)
-        altered.write_text(altered_json)
+        claims[name] = (tmp / f"{name}.claim.json", tmp / f"{name}.altered.json", openings)
+        claims[name][0].write_text(claim_json)
+        claims[name][1].write_text(altered_json)
+    groth16_setup(backends, tmp, [claim for name, (claim, _, _) in claims.items() if name.startswith("groth16_")], "g16")
+    for name, (claim, altered, openings) in claims.items():
         for producer in backends.values():
             proof = tmp / f"{name}-{producer.name}.proof"
             producer.predicate_prove(claim, proof, [secrets[o] for o in openings])
@@ -204,6 +252,8 @@ def predicate_matrix(backends, tmp):
                 verifier.predicate_verify(claim, proof)
                 verifier.predicate_verify(altered, proof, ok=False)
                 verifier.predicate_verify(claim, bad, ok=False)
+                if name.startswith("groth16_"):
+                    verifier.predicate_verify(claim, proof, ok=False, trust=untrusted)
             print(f"PASS: predicate {name} produced by {producer.name}, verified by both (+negatives)")
     transition_matrix(backends, tmp, commitments, secrets)
 
@@ -235,13 +285,15 @@ def credential_matrix(backends, tmp):
     options = tmp / "present-options.json"
     options.write_text('{"also":[{"kind":"compare","commitment":"$attribute","op":"ge","bound":"18"}]}')
     issuer, holder = backends.values()
-    for issuing, presenting in ((issuer, holder), (holder, issuer)):
+    for issuing, presenting, scheme in ((issuer, holder, "spartan-whir"), (holder, issuer, "groth16")):
         issued = tmp / f"issued-{issuing.name}.json"
-        issuing.credential_issue("u32", entries, issued)
+        issuing.credential_issue(scheme, "u32", entries, issued)
         credential = tmp / f"credential-{issuing.name}.json"
         credential.write_text(json.loads(issued.read_text())["credentials"][0])
         claim, prefix = tmp / f"cred-{presenting.name}.claim.json", str(tmp / f"cred-{presenting.name}.s")
         presenting.credential_present(credential, "1700000000", options, claim, prefix)
+        if scheme == "groth16":
+            groth16_setup(backends, tmp, [claim], "g16-credential")
         secrets = sorted(tmp.glob(f"cred-{presenting.name}.s[0-9]"))
         late, late_prefix = tmp / f"late-{presenting.name}.claim.json", str(tmp / f"late-{presenting.name}.s")
         presenting.credential_present(credential, "2000000001", options, late, late_prefix)
@@ -251,7 +303,7 @@ def credential_matrix(backends, tmp):
             producer.predicate_prove(claim, proof, secrets)
             for verifier in backends.values():
                 verifier.predicate_verify(claim, proof)
-        print(f"PASS: credential issued by {issuing.name}, presented by {presenting.name}, proven and verified by both")
+        print(f"PASS: {scheme} credential issued by {issuing.name}, presented by {presenting.name}, proven and verified by both")
 
 
 def main():

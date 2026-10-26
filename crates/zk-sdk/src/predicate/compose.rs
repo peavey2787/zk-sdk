@@ -158,7 +158,7 @@ pub struct ConjunctionWitness {
 /// Either a single claim or a conjunction: what the JSON entry points accept.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Claim {
-    Single(Predicate),
+    Single(Box<Predicate>),
     All(Conjunction),
 }
 
@@ -171,7 +171,7 @@ impl Claim {
                 serde_json::from_value(value).map_err(|e| ZkError::Format(e.to_string()))?;
             return Conjunction::from_wire(wire).map(Self::All);
         }
-        Predicate::from_json(text).map(Self::Single)
+        Predicate::from_json(text).map(|claim| Self::Single(Box::new(claim)))
     }
 }
 
@@ -305,7 +305,7 @@ mod tests {
         let single = Predicate::opens(a);
         assert_eq!(
             Claim::from_json(&single.to_json()).unwrap(),
-            Claim::Single(single)
+            Claim::Single(Box::new(single))
         );
         assert!(Claim::from_json(r#"{"kind":"all","claims":[],"extra":1}"#).is_err());
         assert!(Claim::from_json(r#"{"kind":"all","claims":[]}"#).is_err());

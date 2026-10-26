@@ -3,7 +3,9 @@ import { JobRunner } from "./job-runner.js";
 
 const $ = (id) => document.getElementById(id);
 const runner = new JobRunner("./worker.js");
-const state = { secrets: [], proof: null };
+const NO_SETUP = { id: null, pack: null, setupId: null, label: "none (create or import one)" };
+const state = { secrets: [], proof: null, setup: NO_SETUP };
+let setupIds = 0;
 const ROWS = {
   valueA: "rowValueA", valueB: "rowValueB", op: "rowOp", bound: "rowBound", lo: "rowLo", hi: "rowHi",
   ends: "rowEnds", setValues: "rowSetValues", inputs: "rowInputs", outputs: "rowOutputs", fee: "rowFee", operands: "rowOperands",
@@ -51,6 +53,7 @@ function renderFamily() {
 function setBusy(busy) {
   document.querySelectorAll("button").forEach((b) => (b.disabled = busy && b.id !== "cancel"));
   $("cancel").disabled = !busy;
+  if (!busy) useSetup(state.setup);
 }
 
 // Runs a worker job and records the longest gap between main-thread timer ticks as a
@@ -83,7 +86,7 @@ const show = (id, ms) => ($(id).textContent = `${ms} ms`);
 async function setArtifacts() {
   const family = $("family").value;
   if (family !== "member" && family !== "absent") return { path: [] };
-  const base = { type: $("type").value, values: setValuesJson(form()) };
+  const base = { scheme: $("scheme").value, type: $("type").value, values: setValuesJson(form()) };
   const { result: commitment } = await runner.run("predicateSetCommitment", base);
   const { result: path } = await runner.run("predicateSetPath", { ...base, value: text("valueA"), absent: family === "absent" });
   return { commitment, path: [path] };
@@ -108,8 +111,85 @@ async function commit() {
   log(`committed ${values.length} value(s); the claim is public, the secrets stay in this tab`, "good");
 }
 
-// The worker is respawned on cancel, so the chosen minimum travels with every job that needs it.
-const authorize = () => runner.run("predicateMinimumBits", { bits: Number($("minBits").value) });
+function showProgress({ done, total }) {
+  const bar = $("setupProgress");
+  bar.classList.remove("hidden");
+  Object.assign(bar, { value: done, max: total });
+}
+
+// The worker is respawned on cancel, so the chosen minimum, the Groth16 setup and the trust list
+// travel with every job that needs them (the worker skips both when they are already in place).
+async function authorize() {
+  await runner.run("predicateMinimumBits", { bits: Number($("minBits").value) });
+  const { id, pack } = state.setup;
+  const trust = $("setupTrust").value;
+  await runner.run("groth16Use", { id: `${id}:${trust}`, pack, trust });
+}
+
+function useSetup(setup) {
+  state.setup = setup;
+  $("setupStatus").textContent = setup.setupId ? `${setup.label}, setup ${setup.setupId}` : setup.label;
+  $("setupDownload").disabled = setup.pack === null;
+  $("setupContribute").disabled = setup.pack === null;
+}
+
+// Authorize `setupId` for verification (it stays listed until removed from the text box).
+function trustSetup(setupId) {
+  const listed = $("setupTrust").value.split(/\s+/).filter(Boolean);
+  if (!listed.includes(setupId)) $("setupTrust").value = [...listed, setupId].join("\n");
+}
+
+function describeKey({ circuit, keyId, contributions }) {
+  const lines = contributions.map((c, i) => {
+    const beacon = c.beacon ? ` beacon ${c.beacon.value} 2^${c.beacon.exponent}` : "";
+    return `  #${i + 1} ${c.name ?? "(unnamed)"}${beacon} ${c.hash}`;
+  });
+  return [`${circuit} key ${keyId}`, ...lines].join("\n");
+}
+
+// Check every key of `pack` against phase 1 and show its contribution transcript.
+async function checkSetup(pack) {
+  const { result } = await runner.run("groth16Verify", { pack }, showProgress);
+  $("setupTranscript").textContent = [`setup ${result.setupId}`, ...result.keys.map(describeKey)].join("\n");
+  return result.setupId;
+}
+
+async function scopeCircuits() {
+  if ($("setupScope").value === "all") return null;
+  if (!$("claim").value.trim()) throw new Error("commit first: the claim decides which circuits the setup covers");
+  return (await runner.run("groth16Circuits", { claim: $("claim").value })).result;
+}
+
+// A setup you created or contributed to is sound for you, so it is authorized for verification
+// here; other verifiers decide for themselves.
+async function adoptSetup(pack, label, own) {
+  const setupId = await checkSetup(pack);
+  useSetup({ id: ++setupIds, pack, setupId, label });
+  if (own) trustSetup(setupId);
+  $("setupProgress").classList.add("hidden");
+  return setupId;
+}
+
+async function createSetup() {
+  const circuits = await scopeCircuits();
+  log(`creating a new Groth16 setup for ${circuits ? circuits.join(", ") : "every circuit"} (fetches phase 1 on first use)...`);
+  const { result, ms } = await runner.run("groth16Create", { circuits, contributor: text("contributor") }, showProgress);
+  const setupId = await adoptSetup(result.pack, "your new setup", true);
+  log(`new setup ${setupId}: ${(result.pack.length / 1048576).toFixed(1)} MiB key pack in ${ms} ms; share it (and its id) with the next contributor or your verifiers`, "good");
+}
+
+async function contributeSetup() {
+  log("verifying the setup in use, then adding your contribution to every key...");
+  const { result, ms } = await runner.run("groth16Contribute", { pack: state.setup.pack, contributor: text("contributor") }, showProgress);
+  const setupId = await adoptSetup(result.pack, "the setup with your contribution", true);
+  log(`contributed in ${ms} ms: new setup ${setupId}; pass the key pack on or publish it`, "good");
+}
+
+async function importSetup(name, pack) {
+  const setupId = await adoptSetup(pack, `imported ${name}`, false);
+  const trusted = $("setupTrust").value.includes(setupId);
+  log(`imported ${name}: every key checks out against phase 1 (setup ${setupId}); ${trusted ? "authorized" : "NOT authorized for verification until you add its id"}`, trusted ? "good" : "warn");
+}
 
 // Drop every reference to the private openings (and the proof made from them) so the browser may
 // reclaim them. JavaScript strings cannot be overwritten, so this is release, not erasure.
@@ -156,6 +236,12 @@ async function importFile(input, apply) {
 
 function wire() {
   $("family").onchange = renderFamily;
+  $("scheme").onchange = () => $("trustedSetup").classList.toggle("hidden", $("scheme").value !== "groth16");
+  $("setupCreate").onclick = () => job("create setup", createSetup);
+  $("setupContribute").onclick = () => job("contribute", contributeSetup);
+  $("setupTrustCurrent").onclick = () => state.setup.setupId && trustSetup(state.setup.setupId);
+  $("setupDownload").onclick = () => state.setup.pack && download(`setup-${state.setup.setupId.slice(0, 12)}.zkg16keys`, state.setup.pack);
+  $("setupImport").onchange = (e) => importFile(e.target, (name, bytes) => job("import setup", () => importSetup(name, bytes)));
   $("commit").onclick = () => job("commit", commit);
   $("prove").onclick = () => job("prove", prove);
   $("verify").onclick = () => job("verify", verify);
@@ -182,6 +268,7 @@ async function start() {
   for (const [op, symbol] of Object.entries(OPS)) $("op").append(new Option(symbol, op, false, op === "ge"));
   renderFamily();
   wire();
+  useSetup(NO_SETUP);
   $("backend").textContent = (await runner.run("capabilities")).result;
   log("ready: commitments, proofs and verification all run in this browser tab");
 }

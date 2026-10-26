@@ -14,12 +14,10 @@
 
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
-use zk_groth16::{Bn254, Fr};
-use zk_witness::Field as _;
+use zk_groth16::Fr;
 
-pub use super::hash::DIGEST_ELEMENTS;
 pub(super) use super::hash::FIELD_MODULUS;
-use super::hash::{sponge, COMMIT_DOMAIN};
+use super::hash::{scalar_from_hex, scalar_hex, sponge, Node, COMMIT_DOMAIN};
 use super::int::{IntType, Number};
 use super::scheme::Scheme;
 use crate::{Result, ZkError};
@@ -27,12 +25,6 @@ use crate::{Result, ZkError};
 pub const BLINDING_ELEMENTS: usize = 8;
 
 type KoalaBlinding = [u32; BLINDING_ELEMENTS];
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-enum Digest {
-    KoalaBear(super::hash::Digest),
-    Bn254(Fr),
-}
 
 #[derive(Clone, PartialEq, Eq)]
 enum Blinding {
@@ -49,18 +41,18 @@ impl Zeroize for Blinding {
     }
 }
 
-fn digest(ty: IntType, encoded: u128, blinding: &Blinding) -> Digest {
+fn digest(ty: IntType, encoded: u128, blinding: &Blinding) -> Node {
     let limbs = ty.limbs(encoded);
     match blinding {
         Blinding::KoalaBear(blinding) => {
             let mut message = vec![u32::from(ty.signed), limbs.len() as u32];
             message.extend(limbs.iter().map(|l| *l as u32));
             message.extend_from_slice(blinding);
-            Digest::KoalaBear(sponge(COMMIT_DOMAIN, &message))
+            Node::KoalaBear(sponge(COMMIT_DOMAIN, &message))
         }
         Blinding::Bn254(blinding) => {
             let limbs: Vec<u16> = limbs.iter().map(|l| *l as u16).collect();
-            Digest::Bn254(zk_groth16::commit(ty.signed, &limbs, *blinding))
+            Node::Bn254(zk_groth16::commit(ty.signed, &limbs, *blinding))
         }
     }
 }
@@ -91,49 +83,13 @@ fn random_blinding(scheme: Scheme) -> Result<Blinding> {
     }
 }
 
-/// A BN254 scalar as 64 big-endian hex digits.
-fn scalar_hex(scalar: Fr) -> String {
-    Bn254::to_le(scalar)
-        .iter()
-        .rev()
-        .map(|b| format!("{b:02x}"))
-        .collect()
-}
-
-/// The canonical scalar spelled by 64 hex digits, if any.
-fn scalar_from_hex(hex: &str) -> Option<Fr> {
-    if hex.len() != 64 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return None;
-    }
-    let mut bytes = (0..32)
-        .map(|i| u8::from_str_radix(&hex[2 * i..2 * i + 2], 16).ok())
-        .collect::<Option<Vec<u8>>>()?;
-    bytes.reverse();
-    Bn254::from_le(&bytes)
-}
-
-fn koalabear_digest(hex: &str) -> Option<super::hash::Digest> {
-    if hex.len() != DIGEST_ELEMENTS * 8 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return None;
-    }
-    let mut digest = [0u32; DIGEST_ELEMENTS];
-    for (slot, chunk) in digest.iter_mut().zip(hex.as_bytes().chunks(8)) {
-        let element = u32::from_str_radix(std::str::from_utf8(chunk).ok()?, 16).ok()?;
-        if element >= FIELD_MODULUS {
-            return None;
-        }
-        *slot = element;
-    }
-    Some(digest)
-}
-
 /// The public commitment to a typed integer. Safe to publish; it carries its type and scheme, which
 /// the digest binds, so a commitment cannot be reinterpreted under another width, signedness or
 /// proof system.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Commitment {
     ty: IntType,
-    digest: Digest,
+    digest: Node,
 }
 
 /// The secret behind a [`Commitment`]: the value and its blinding. Never log or transmit it; the
@@ -217,30 +173,19 @@ impl Commitment {
     }
 
     pub fn scheme(&self) -> Scheme {
-        match self.digest {
-            Digest::KoalaBear(_) => Scheme::SpartanWhir,
-            Digest::Bn254(_) => Scheme::Groth16,
-        }
+        self.digest.scheme()
     }
 
     /// The digest as circuit signals: eight KoalaBear elements, or one BN254 scalar.
     pub(super) fn signals(&self) -> Vec<Fr> {
-        match self.digest {
-            Digest::KoalaBear(words) => words.iter().map(|w| Fr::from(*w)).collect(),
-            Digest::Bn254(scalar) => vec![scalar],
-        }
+        self.digest.signals()
     }
 
     /// Canonical text form: `<type>:<64 hex digits>` for Spartan-WHIR (e.g. `u64:00ab..`), and
     /// `groth16:<type>:<64 hex digits>` for Groth16.
     pub fn to_text(&self) -> String {
-        match self.digest {
-            Digest::KoalaBear(words) => {
-                let hex: String = words.iter().map(|d| format!("{d:08x}")).collect();
-                format!("{}:{hex}", self.ty)
-            }
-            Digest::Bn254(scalar) => format!("groth16:{}:{}", self.ty, scalar_hex(scalar)),
-        }
+        let prefix = self.scheme().text_prefix();
+        format!("{prefix}{}:{}", self.ty, self.digest.to_hex())
     }
 
     pub fn from_text(text: &str) -> Result<Self> {
@@ -249,17 +194,10 @@ impl Commitment {
                 "`{text}` is not a commitment ([groth16:]type:64 hex digits)"
             ))
         };
-        let (bn254, rest) = match text.strip_prefix("groth16:") {
-            Some(rest) => (true, rest),
-            None => (false, text),
-        };
+        let (scheme, rest) = Scheme::split_text(text);
         let (name, hex) = rest.split_once(':').ok_or_else(invalid)?;
         let ty: IntType = name.parse().map_err(|_| invalid())?;
-        let digest = if bn254 {
-            Digest::Bn254(scalar_from_hex(hex).ok_or_else(invalid)?)
-        } else {
-            Digest::KoalaBear(koalabear_digest(hex).ok_or_else(invalid)?)
-        };
+        let digest = Node::from_hex(scheme, hex).ok_or_else(invalid)?;
         Ok(Self { ty, digest })
     }
 }

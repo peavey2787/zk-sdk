@@ -5,7 +5,8 @@
 //! open intervals between consecutive sorted members (unbounded at both ends). A holder of a
 //! committed value asks the tree for a [`SetPath`] and proves, against the published roots, that the
 //! value is a member (its leaf is in the member tree) or is absent (it lies strictly inside one
-//! interval of the gap tree) without revealing the value or which leaf it is. The hashes are in
+//! interval of the gap tree) without revealing the value or which leaf it is. A tree is built for
+//! one [`Scheme`] and only proves claims about that scheme's commitments. The hashes are in
 //! `hash.rs`; `circuits/predicates/sets.circom` is the circuit.
 //!
 //! Trust: the roots are only as honest as their publisher. A verifier who does not rebuild the tree
@@ -18,15 +19,15 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-use super::commit::DIGEST_ELEMENTS;
-use super::hash::{compress, sponge, Digest, FIELD_MODULUS, GAP_DOMAIN, LEAF_DOMAIN};
+use zk_groth16::Fr;
+
+use super::hash::{Node, GAP_DOMAIN, LEAF_DOMAIN};
 use super::int::{IntType, Number};
+use super::scheme::Scheme;
 use crate::{Result, ZkError};
 
 /// Tree depths with an approved circuit; a set of `n` members needs `n + 1 <= 2^depth`.
 pub const SET_DEPTHS: [usize; 2] = [8, 20];
-
-const ZERO: Digest = [0; DIGEST_ELEMENTS];
 
 fn error(message: impl Into<String>) -> ZkError {
     ZkError::Predicate(message.into())
@@ -36,11 +37,11 @@ fn limb_words(ty: IntType, encoded: u128) -> Vec<u32> {
     ty.limbs(encoded).iter().map(|l| *l as u32).collect()
 }
 
-fn member_leaf(ty: IntType, encoded: u128) -> Digest {
+fn member_leaf(scheme: Scheme, ty: IntType, encoded: u128) -> Node {
     let limbs = limb_words(ty, encoded);
     let mut message = vec![u32::from(ty.signed), limbs.len() as u32];
     message.extend(limbs);
-    sponge(LEAF_DOMAIN, &message)
+    Node::leaf(scheme, LEAF_DOMAIN, &message)
 }
 
 /// One open interval of the gap tree; `None` is unbounded on that side.
@@ -55,7 +56,7 @@ impl Gap {
         self.lo.is_none_or(|lo| lo < encoded) && self.hi.is_none_or(|hi| encoded < hi)
     }
 
-    fn leaf(&self, ty: IntType) -> Digest {
+    fn leaf(&self, scheme: Scheme, ty: IntType) -> Node {
         let lo = limb_words(ty, self.lo.unwrap_or(0));
         let hi = limb_words(ty, self.hi.unwrap_or(0));
         let mut message = vec![
@@ -66,17 +67,18 @@ impl Gap {
         ];
         message.extend(lo);
         message.extend(hi);
-        sponge(GAP_DOMAIN, &message)
+        Node::leaf(scheme, GAP_DOMAIN, &message)
     }
 }
 
-/// The public handle of a set: its type, tree depth and the two Merkle roots. Safe to publish.
+/// The public handle of a set: its type, tree depth and the two Merkle roots (whose kind is the
+/// set's scheme). Safe to publish.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct SetCommitment {
     ty: IntType,
     depth: usize,
-    members: Digest,
-    gaps: Digest,
+    members: Node,
+    gaps: Node,
 }
 
 impl SetCommitment {
@@ -84,32 +86,39 @@ impl SetCommitment {
         self.ty
     }
 
+    pub fn scheme(&self) -> Scheme {
+        self.members.scheme()
+    }
+
     pub fn depth(&self) -> usize {
         self.depth
     }
 
-    pub(super) fn members(&self) -> &Digest {
+    pub(super) fn members(&self) -> &Node {
         &self.members
     }
 
-    pub(super) fn gaps(&self) -> &Digest {
+    pub(super) fn gaps(&self) -> &Node {
         &self.gaps
     }
 
-    /// Canonical text form `set:<type>:<depth>:<128 hex digits>` (member root, then gap root).
+    /// Canonical text form `[groth16:]set:<type>:<depth>:<128 hex digits>` (member root, then gap
+    /// root).
     pub fn to_text(&self) -> String {
-        let hex: String = self
-            .members
-            .iter()
-            .chain(&self.gaps)
-            .map(|d| format!("{d:08x}"))
-            .collect();
-        format!("set:{}:{}:{hex}", self.ty, self.depth)
+        format!(
+            "{}set:{}:{}:{}{}",
+            self.scheme().text_prefix(),
+            self.ty,
+            self.depth,
+            self.members.to_hex(),
+            self.gaps.to_hex()
+        )
     }
 
     pub fn from_text(text: &str) -> Result<Self> {
         let invalid = || ZkError::Format(format!("`{text}` is not a set commitment"));
-        let mut parts = text.splitn(4, ':');
+        let (scheme, rest) = Scheme::split_text(text);
+        let mut parts = rest.splitn(4, ':');
         let (Some("set"), Some(ty), Some(depth), Some(hex)) =
             (parts.next(), parts.next(), parts.next(), parts.next())
         else {
@@ -117,32 +126,17 @@ impl SetCommitment {
         };
         let ty: IntType = ty.parse().map_err(|_| invalid())?;
         let depth: usize = depth.parse().map_err(|_| invalid())?;
-        if !SET_DEPTHS.contains(&depth) || hex.len() != 16 * DIGEST_ELEMENTS {
+        if !SET_DEPTHS.contains(&depth) || hex.len() != 128 || !hex.is_ascii() {
             return Err(invalid());
         }
-        let words = parse_words(hex).ok_or_else(invalid)?;
-        let (members, gaps) = words.split_at(DIGEST_ELEMENTS);
+        let (members, gaps) = hex.split_at(64);
         Ok(Self {
             ty,
             depth,
-            members: members.try_into().map_err(|_| invalid())?,
-            gaps: gaps.try_into().map_err(|_| invalid())?,
+            members: Node::from_hex(scheme, members).ok_or_else(invalid)?,
+            gaps: Node::from_hex(scheme, gaps).ok_or_else(invalid)?,
         })
     }
-}
-
-/// Field elements from 8-digit hex groups; `None` when one is malformed or not canonical.
-pub(super) fn parse_words(hex: &str) -> Option<Vec<u32>> {
-    if !hex.is_ascii() {
-        return None;
-    }
-    hex.as_bytes()
-        .chunks(8)
-        .map(|chunk| {
-            let word = u32::from_str_radix(std::str::from_utf8(chunk).ok()?, 16).ok()?;
-            (word < FIELD_MODULUS).then_some(word)
-        })
-        .collect()
 }
 
 impl fmt::Display for SetCommitment {
@@ -172,11 +166,12 @@ impl<'de> Deserialize<'de> for SetCommitment {
 /// The private path from a leaf to a root: which leaf (`index`), the sibling digests bottom-up,
 /// and for an absence claim the interval the value lies in. The index identifies the member, so a
 /// path is private to the prover; its `Debug` output is redacted and its contents are overwritten
-/// when it is dropped.
+/// when it is dropped. Every sibling is of the path's scheme.
 #[derive(Clone, PartialEq, Eq)]
 pub struct SetPath {
+    scheme: Scheme,
     pub(super) index: u64,
-    pub(super) siblings: Vec<Digest>,
+    pub(super) siblings: Vec<Node>,
     pub(super) gap: Option<Gap>,
 }
 
@@ -194,28 +189,47 @@ impl fmt::Debug for SetPath {
 }
 
 impl SetPath {
-    /// A path to a member leaf: its position and the sibling digests bottom-up.
-    pub(super) fn member(index: u64, siblings: Vec<Digest>) -> Self {
+    /// A path to a member leaf of a `scheme` tree: its position and the sibling digests bottom-up.
+    pub(super) fn member(scheme: Scheme, index: u64, siblings: Vec<Node>) -> Self {
         Self {
+            scheme,
             index,
             siblings,
             gap: None,
         }
     }
 
-    pub(super) fn siblings_len(&self) -> usize {
-        self.siblings.len()
+    pub fn scheme(&self) -> Scheme {
+        self.scheme
     }
 
-    pub(super) fn root(&self, leaf: Digest) -> Digest {
+    /// Fails unless this path belongs to a `scheme` tree of `depth` levels.
+    pub(super) fn check_shape(&self, scheme: Scheme, depth: usize) -> Result<()> {
+        if self.scheme != scheme {
+            return Err(error(format!(
+                "the path is for a {} tree, not a {scheme} one",
+                self.scheme
+            )));
+        }
+        if self.siblings.len() != depth {
+            return Err(error(format!(
+                "the path has {} levels but the tree has depth {depth}",
+                self.siblings.len()
+            )));
+        }
+        Ok(())
+    }
+
+    /// The root `leaf` reaches; `leaf` is of the path's scheme ([`SetPath::check_shape`]).
+    pub(super) fn root(&self, leaf: Node) -> Node {
         self.siblings
             .iter()
             .enumerate()
             .fold(leaf, |node, (level, sibling)| {
                 if (self.index >> level) & 1 == 1 {
-                    compress(sibling, &node)
+                    sibling.parent(&node)
                 } else {
-                    compress(&node, sibling)
+                    node.parent(sibling)
                 }
             })
     }
@@ -228,38 +242,39 @@ impl SetPath {
         ty: IntType,
         absent: bool,
         depth: usize,
-    ) -> Result<Vec<(String, u64)>> {
+    ) -> Result<Vec<(String, Fr)>> {
         if self.siblings.len() != depth {
             return Err(error(format!(
                 "the path has {} levels but the set has depth {depth}",
                 self.siblings.len()
             )));
         }
-        let mut inputs: Vec<(String, u64)> = (0..depth)
-            .map(|level| (format!("index_bit[{level}]"), (self.index >> level) & 1))
+        let mut inputs: Vec<(String, Fr)> = (0..depth)
+            .map(|level| {
+                let bit = (self.index >> level) & 1;
+                (format!("index_bit[{level}]"), Fr::from(bit))
+            })
             .collect();
-        for (level, sibling) in self.siblings.iter().enumerate() {
-            let base = level * DIGEST_ELEMENTS;
-            inputs.extend(
-                sibling
-                    .iter()
-                    .enumerate()
-                    .map(|(i, word)| (format!("sibling[{}]", base + i), u64::from(*word))),
-            );
-        }
+        let elements = self.siblings.iter().flat_map(Node::signals);
+        inputs.extend(
+            elements
+                .enumerate()
+                .map(|(i, e)| (format!("sibling[{i}]"), e)),
+        );
         if absent {
             let gap = self
                 .gap
                 .ok_or_else(|| error("an absence claim needs a path from absence_path"))?;
-            inputs.push(("lo_infinite".into(), u64::from(gap.lo.is_none())));
-            inputs.push(("hi_infinite".into(), u64::from(gap.hi.is_none())));
+            let flag = |infinite: bool| Fr::from(u64::from(infinite));
+            inputs.push(("lo_infinite".into(), flag(gap.lo.is_none())));
+            inputs.push(("hi_infinite".into(), flag(gap.hi.is_none())));
             for (name, end) in [("lo", gap.lo), ("hi", gap.hi)] {
                 let limbs = ty.limbs(end.unwrap_or(0));
                 inputs.extend(
                     limbs
                         .iter()
                         .enumerate()
-                        .map(|(i, limb)| (format!("{name}[{i}]"), *limb)),
+                        .map(|(i, limb)| (format!("{name}[{i}]"), Fr::from(*limb))),
                 );
             }
         }
@@ -281,6 +296,8 @@ impl SetPath {
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct PathText {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    scheme: Option<String>,
     index: u64,
     siblings: Vec<String>,
     #[serde(default)]
@@ -298,12 +315,9 @@ impl From<&SetPath> for PathText {
     fn from(path: &SetPath) -> Self {
         let text = |end: Option<u128>| end.map(|e| e.to_string());
         Self {
+            scheme: (path.scheme != Scheme::SpartanWhir).then(|| path.scheme.name().to_owned()),
             index: path.index,
-            siblings: path
-                .siblings
-                .iter()
-                .map(|d| d.iter().map(|w| format!("{w:08x}")).collect())
-                .collect(),
+            siblings: path.siblings.iter().map(|node| node.to_hex()).collect(),
             gap: path.gap.map(|gap| GapText {
                 lo: text(gap.lo),
                 hi: text(gap.hi),
@@ -319,18 +333,15 @@ impl PathText {
             text.map(|t| t.parse::<u128>().map_err(|_| invalid()))
                 .transpose()
         };
+        let scheme = match &self.scheme {
+            Some(name) => name.parse()?,
+            None => Scheme::SpartanWhir,
+        };
         let siblings = self
             .siblings
             .iter()
-            .map(|hex| {
-                if hex.len() != 8 * DIGEST_ELEMENTS {
-                    return Err(invalid());
-                }
-                parse_words(hex)
-                    .and_then(|words| words.try_into().ok())
-                    .ok_or_else(invalid)
-            })
-            .collect::<Result<Vec<Digest>>>()?;
+            .map(|hex| Node::from_hex(scheme, hex).ok_or_else(invalid))
+            .collect::<Result<Vec<Node>>>()?;
         let gap = self
             .gap
             .map(|gap| -> Result<Gap> {
@@ -341,6 +352,7 @@ impl PathText {
             })
             .transpose()?;
         Ok(SetPath {
+            scheme,
             index: self.index,
             siblings,
             gap,
@@ -351,35 +363,36 @@ impl PathText {
 /// A set of integers of one type with both Merkle trees materialised (only the populated part of
 /// each level is stored; empty subtrees are the precomputed zero hashes).
 pub struct SetTree {
+    scheme: Scheme,
     ty: IntType,
     depth: usize,
     values: Vec<u128>,
-    members: Vec<Vec<Digest>>,
-    gaps: Vec<Vec<Digest>>,
+    members: Vec<Vec<Node>>,
+    gaps: Vec<Vec<Node>>,
 }
 
-pub(super) fn zero_hashes(depth: usize) -> Vec<Digest> {
-    let mut zeros = vec![ZERO];
+pub(super) fn zero_hashes(scheme: Scheme, depth: usize) -> Vec<Node> {
+    let mut zeros = vec![Node::zero(scheme)];
     for level in 0..depth {
-        zeros.push(compress(&zeros[level], &zeros[level]));
+        zeros.push(zeros[level].parent(&zeros[level]));
     }
     zeros
 }
 
-pub(super) fn levels(leaves: Vec<Digest>, zeros: &[Digest]) -> Vec<Vec<Digest>> {
+pub(super) fn levels(leaves: Vec<Node>, zeros: &[Node]) -> Vec<Vec<Node>> {
     let mut levels = vec![leaves];
     for zero in &zeros[..zeros.len() - 1] {
         let below = levels.last().expect("levels start non-empty");
         let above = below
             .chunks(2)
-            .map(|pair| compress(&pair[0], pair.get(1).unwrap_or(zero)))
+            .map(|pair| pair[0].parent(pair.get(1).unwrap_or(zero)))
             .collect();
         levels.push(above);
     }
     levels
 }
 
-pub(super) fn top(levels: &[Vec<Digest>], zeros: &[Digest]) -> Digest {
+pub(super) fn top(levels: &[Vec<Node>], zeros: &[Node]) -> Node {
     levels
         .last()
         .and_then(|root| root.first())
@@ -413,8 +426,13 @@ pub(super) fn fit_depth(count: usize) -> Result<usize> {
 }
 
 /// The sibling digests from leaf `index` of `tree` up to the root of a depth-`depth` tree.
-pub(super) fn siblings_of(tree: &[Vec<Digest>], depth: usize, index: usize) -> Vec<Digest> {
-    let zeros = zero_hashes(depth);
+pub(super) fn siblings_of(
+    scheme: Scheme,
+    tree: &[Vec<Node>],
+    depth: usize,
+    index: usize,
+) -> Vec<Node> {
+    let zeros = zero_hashes(scheme, depth);
     (0..depth)
         .map(|level| {
             *tree[level]
@@ -425,32 +443,42 @@ pub(super) fn siblings_of(tree: &[Vec<Digest>], depth: usize, index: usize) -> V
 }
 
 impl SetTree {
-    /// Build the trees for `values` (duplicates are ignored). Fails when a value does not fit `ty`
-    /// or the set is too large for the largest approved depth.
+    /// Build the Spartan-WHIR trees for `values` (duplicates are ignored). Fails when a value does
+    /// not fit `ty` or the set is too large for the largest approved depth.
     pub fn new(ty: IntType, values: impl IntoIterator<Item = Number>) -> Result<Self> {
+        Self::new_in(Scheme::SpartanWhir, ty, values)
+    }
+
+    /// Build the trees for `values` in `scheme`, for claims about that scheme's commitments.
+    pub fn new_in(
+        scheme: Scheme,
+        ty: IntType,
+        values: impl IntoIterator<Item = Number>,
+    ) -> Result<Self> {
         let sorted: BTreeSet<u128> = values
             .into_iter()
             .map(|v| ty.encode(v))
             .collect::<Result<_>>()?;
         let values: Vec<u128> = sorted.into_iter().collect();
         let depth = fit_depth(values.len())?;
-        let zeros = zero_hashes(depth);
-        let members = levels(values.iter().map(|v| member_leaf(ty, *v)).collect(), &zeros);
-        let gaps = levels(
-            gaps_of(&values).iter().map(|gap| gap.leaf(ty)).collect(),
-            &zeros,
-        );
+        let zeros = zero_hashes(scheme, depth);
+        let members = values.iter().map(|v| member_leaf(scheme, ty, *v)).collect();
+        let gaps = gaps_of(&values)
+            .iter()
+            .map(|gap| gap.leaf(scheme, ty))
+            .collect();
         Ok(Self {
+            scheme,
             ty,
             depth,
+            members: levels(members, &zeros),
+            gaps: levels(gaps, &zeros),
             values,
-            members,
-            gaps,
         })
     }
 
     pub fn commitment(&self) -> SetCommitment {
-        let zeros = zero_hashes(self.depth);
+        let zeros = zero_hashes(self.scheme, self.depth);
         SetCommitment {
             ty: self.ty,
             depth: self.depth,
@@ -466,11 +494,11 @@ impl SetTree {
             .values
             .binary_search(&encoded)
             .map_err(|_| error("the value is not a member of the set"))?;
-        Ok(SetPath {
-            index: index as u64,
-            siblings: siblings_of(&self.members, self.depth, index),
-            gap: None,
-        })
+        Ok(SetPath::member(
+            self.scheme,
+            index as u64,
+            siblings_of(self.scheme, &self.members, self.depth, index),
+        ))
     }
 
     /// The path proving `value` is not in the set; fails when it is a member.
@@ -482,8 +510,9 @@ impl SetTree {
             .err()
             .ok_or_else(|| error("the value is a member of the set"))?;
         Ok(SetPath {
+            scheme: self.scheme,
             index: index as u64,
-            siblings: siblings_of(&self.gaps, self.depth, index),
+            siblings: siblings_of(self.scheme, &self.gaps, self.depth, index),
             gap: Some(gaps_of(&self.values)[index]),
         })
     }
@@ -500,16 +529,10 @@ pub(super) fn refusal(
     let path = path.ok_or_else(|| {
         error("this claim needs a set path (SetTree::member_path / absence_path)")
     })?;
-    if path.siblings.len() != set.depth {
-        return Err(error(format!(
-            "the path has {} levels but the set has depth {}",
-            path.siblings.len(),
-            set.depth
-        )));
-    }
+    path.check_shape(set.scheme(), set.depth)?;
     Ok(if absent {
         absence_refusal(set, encoded, path)
-    } else if path.root(member_leaf(set.ty, encoded)) == set.members {
+    } else if path.root(member_leaf(set.scheme(), set.ty, encoded)) == set.members {
         None
     } else {
         Some(
@@ -526,7 +549,7 @@ fn absence_refusal(set: &SetCommitment, encoded: u128, path: &SetPath) -> Option
     if !gap.contains(encoded) {
         return Some("the value is not inside the interval the path names".into());
     }
-    (path.root(gap.leaf(set.ty)) != set.gaps)
+    (path.root(gap.leaf(set.scheme(), set.ty)) != set.gaps)
         .then(|| "the interval is not in the published set".into())
 }
 
@@ -599,6 +622,33 @@ mod tests {
         let unsigned = SetTree::new(IntType::U32, [Number::from(1u8)]).unwrap();
         let signed = SetTree::new(IntType::I32, [Number::from(1u8)]).unwrap();
         assert_ne!(unsigned.commitment().members, signed.commitment().members);
+    }
+
+    #[test]
+    fn groth16_trees_prove_their_own_values_and_never_mix_with_spartan_paths() {
+        let values = || [3u64, 9, 27].map(Number::from);
+        let groth16 = SetTree::new_in(Scheme::Groth16, IntType::U64, values()).unwrap();
+        let spartan = SetTree::new(IntType::U64, values()).unwrap();
+        let commitment = groth16.commitment();
+        assert_eq!(commitment.scheme(), Scheme::Groth16);
+        assert!(commitment.to_text().starts_with("groth16:set:u64:8:"));
+        assert_eq!(
+            SetCommitment::from_text(&commitment.to_text()).unwrap(),
+            commitment
+        );
+        for (absent, value, path) in [
+            (false, 9, groth16.member_path(9u64).unwrap()),
+            (true, 10, groth16.absence_path(10u64).unwrap()),
+        ] {
+            assert_eq!(SetPath::from_json(&path.to_json()).unwrap(), path);
+            assert_eq!(
+                refusal(&commitment, absent, value, Some(&path)).unwrap(),
+                None
+            );
+            assert!(refusal(&spartan.commitment(), absent, value, Some(&path)).is_err());
+        }
+        let spartan_path = spartan.member_path(9u64).unwrap();
+        assert!(refusal(&commitment, false, 9, Some(&spartan_path)).is_err());
     }
 
     #[test]

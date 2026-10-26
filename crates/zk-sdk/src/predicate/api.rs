@@ -116,20 +116,27 @@ fn take_path(secrets: &mut Vec<String>) -> Result<SetPath> {
     path
 }
 
-fn tree(int_type: &str, values_json: &str) -> Result<SetTree> {
+fn tree(scheme: &str, int_type: &str, values_json: &str) -> Result<SetTree> {
     let values: Vec<Number> =
         serde_json::from_str(values_json).map_err(|e| ZkError::Format(e.to_string()))?;
-    SetTree::new(int_type.parse()?, values)
+    SetTree::new_in(scheme.parse()?, int_type.parse()?, values)
 }
 
-/// The public commitment text of the set of decimal strings in the JSON array `values_json`.
-pub fn set_commitment(int_type: &str, values_json: &str) -> Result<String> {
-    Ok(tree(int_type, values_json)?.commitment().to_text())
+/// The public commitment text of the set of decimal strings in the JSON array `values_json`, for
+/// claims about `scheme` commitments.
+pub fn set_commitment(scheme: &str, int_type: &str, values_json: &str) -> Result<String> {
+    Ok(tree(scheme, int_type, values_json)?.commitment().to_text())
 }
 
 /// The private Merkle path (JSON) showing `value` is in the set, or with `absent` that it is not.
-pub fn set_path(int_type: &str, values_json: &str, value: &str, absent: bool) -> Result<String> {
-    let tree = tree(int_type, values_json)?;
+pub fn set_path(
+    scheme: &str,
+    int_type: &str,
+    values_json: &str,
+    value: &str,
+    absent: bool,
+) -> Result<String> {
+    let tree = tree(scheme, int_type, values_json)?;
     let value: Number = value.parse()?;
     let path = if absent {
         tree.absence_path(value)?
@@ -155,8 +162,9 @@ fn unsigned(number: Number, what: &str) -> Result<u64> {
 /// Issue credentials of attribute type `int_type` from the JSON array `entries_json` of
 /// `{"attribute","serial","expiry"}` (decimal strings, expiry in Unix seconds). Returns JSON
 /// `{"issuer": <public commitment>, "credentials": [<one secret credential text per entry>]}`:
-/// publish the issuer, give each holder their credential.
-pub fn credential_issue(int_type: &str, entries_json: &str) -> Result<String> {
+/// publish the issuer, give each holder their credential. The credentials are presented with
+/// `scheme` commitments.
+pub fn credential_issue(scheme: &str, int_type: &str, entries_json: &str) -> Result<String> {
     let entries: Vec<EntryText> =
         serde_json::from_str(entries_json).map_err(|e| ZkError::Format(e.to_string()))?;
     let entries = entries
@@ -169,7 +177,7 @@ pub fn credential_issue(int_type: &str, entries_json: &str) -> Result<String> {
             })
         })
         .collect::<Result<Vec<_>>>()?;
-    let issuer = CredentialIssuer::new(int_type.parse()?, entries)?;
+    let issuer = CredentialIssuer::new_in(scheme.parse()?, int_type.parse()?, entries)?;
     let credentials: Vec<String> = issuer
         .credentials()?
         .iter()
@@ -268,7 +276,7 @@ pub fn credential_present(
     let also = with_commitments(&presentation, &options.also)?;
     let revoked = options
         .revoked
-        .map(|serials| SetTree::new(IntType::U64, serials))
+        .map(|serials| SetTree::new_in(credential.issuer().scheme(), IntType::U64, serials))
         .transpose()?;
     let (claim, witness) = presentation.all(also, revoked.as_ref())?;
     Ok(Presented::new(&claim.to_json(), witness_secrets(&witness)))
@@ -336,6 +344,24 @@ pub fn verify(zk: &Predicates, claim_json: &str, proof: &[u8]) -> Result<()> {
     }
 }
 
+/// The Groth16 circuits proving or verifying `claim_json` needs (none for a Spartan-WHIR claim), so
+/// a host that loads artifacts on demand can fetch them first.
+pub fn claim_groth16_circuits(claim_json: &str) -> Result<Vec<String>> {
+    let claims = match Claim::from_json(claim_json)? {
+        Claim::Single(claim) => vec![*claim],
+        Claim::All(all) => all.claims().to_vec(),
+    };
+    let mut names = Vec::new();
+    for claim in &claims {
+        let statement = claim.statement()?;
+        if statement.scheme() == Scheme::Groth16 && !names.iter().any(|n| n == statement.circuit())
+        {
+            names.push(statement.circuit().to_owned());
+        }
+    }
+    Ok(names)
+}
+
 /// Circuit name, scheme (with the attained security level for Spartan-WHIR) and public inputs of
 /// a claim, for display and interoperability checks.
 pub fn describe(zk: &Predicates, claim_json: &str) -> Result<String> {
@@ -397,7 +423,15 @@ mod tests {
 
     #[test]
     fn groth16_json_round_trip_proves_verifies_and_describes() {
-        let zk = Predicates::new();
+        use crate::predicate::{load_ceremony, Contribution, Groth16Setup, Trust};
+        let ceremony = load_ceremony(None, None).unwrap();
+        let contribution = Contribution::Random { name: None };
+        let pack = ceremony
+            .create(&["range_32".to_owned()], &contribution, &mut |_, _, _| {})
+            .unwrap();
+        let mut trust = Trust::default();
+        trust.insert(pack.setup_id().unwrap());
+        let zk = Predicates::new().with_groth16(Groth16Setup::new(ceremony, pack, trust).unwrap());
         let made = commit("groth16", "u32", "30").unwrap();
         assert!(made.commitment.starts_with("groth16:u32:"));
         let claim = format!(

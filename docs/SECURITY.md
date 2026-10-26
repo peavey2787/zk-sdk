@@ -35,7 +35,7 @@ Artifacts and circuits have hard size caps and strict decoding. Proving cost gro
 
 ## Predicates
 
-See `docs/PREDICATES.md` for the commitment, integer encoding and circuit-identity model. Verification derives public inputs from the caller's claim. Bundled circuits are SHA-256-checked and reproducibly rebuilt (`scripts/build_circuits.py --check`). The end-to-end soundness of the configured 116-bit target is **not independently recomputed**; do not quote a post-quantum bit-security figure for it.
+See `docs/PREDICATES.md` for the commitment, integer encoding and circuit-identity model. Verification derives public inputs from the caller's claim. Bundled circuits are SHA-256-checked and reproducibly rebuilt (`scripts/build_circuits.py --check`). The end-to-end soundness of the configured 116-bit target is **not independently recomputed**; do not quote a post-quantum bit-security figure for it. Groth16 (opt-in) ships no keys; its soundness rests on the setup the verifier authorizes, and its end-to-end soundness is likewise not independently verified (`docs/GROTH16_SETUP.md`).
 
 ## Not covered
 

@@ -25,7 +25,9 @@ Keep the facade at six operations. Mark a milestone done only when its acceptanc
 
 - [x] Groth16 backend, first slice: `zk-groth16` (Groth16 on arkworks curves against snarkjs zkeys), BN254 builds of open/compare/range/compare_committed at 32/64/128 bits, public Hermez phase 1 plus a documented phase 2 (`docs/GROTH16_SETUP.md`), benchmark.
 - [x] Groth16 integration: scheme-tagged commitments and proofs in `Predicates` (including conjunctions), CLI (`--scheme`) and WASM/browser; native/WASM interop.
-- [ ] Groth16: remaining families on BN254; more phase-2 contributors; optional Rapidsnark; browser timings.
+- [x] Groth16 for every family (arithmetic, conservation, interval unions, distance, set membership/absence, credentials) on BN254; artifacts loaded at run time.
+- [x] Groth16 trusted setups as a feature, no keys in the repository: phase 2 initialized from the verified published phase 1, created for one circuit or all 45, sequential contributions and beacons with full transcripts, snarkjs-compatible (cross-checked against snarkjs 0.7.6), key and setup ids with verifier authorization, interoperable native/browser key packs (`zk groth16`, browser Trusted Setup section); every test makes ephemeral setups.
+- [ ] Groth16: optional Rapidsnark; browser timings; independent soundness review.
 
 ## Next predicate families (in order; reuse the shared gadgets in `circuits/lib`)
 

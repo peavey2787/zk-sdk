@@ -14,13 +14,13 @@ include "../lib/compare.circom";
 // Values are the unsigned limbs of the biased representation, as everywhere in the library.
 
 template SetMember(L, D) {
-    signal input commitment[8];
+    signal input commitment[digest_len()];
     signal input signed;
-    signal input root[8];
+    signal input root[digest_len()];
     signal input limb[L];
-    signal input blinding[8];
+    signal input blinding[blinding_len()];
     signal input index_bit[D];
-    signal input sibling[D * 8];
+    signal input sibling[D * digest_len()];
     signed * (signed - 1) === 0;
     component opens = CommitmentOpens(L);
     opens.commitment <== commitment;
@@ -35,21 +35,21 @@ template SetMember(L, D) {
     path.leaf <== leaf.digest;
     path.index_bit <== index_bit;
     path.sibling <== sibling;
-    for (var i = 0; i < 8; i++) { path.root[i] === root[i]; }
+    for (var i = 0; i < digest_len(); i++) { path.root[i] === root[i]; }
 }
 
 template SetAbsent(L, D) {
-    signal input commitment[8];
+    signal input commitment[digest_len()];
     signal input signed;
-    signal input root[8];
+    signal input root[digest_len()];
     signal input limb[L];
-    signal input blinding[8];
+    signal input blinding[blinding_len()];
     signal input lo_infinite;
     signal input hi_infinite;
     signal input lo[L];
     signal input hi[L];
     signal input index_bit[D];
-    signal input sibling[D * 8];
+    signal input sibling[D * digest_len()];
     signed * (signed - 1) === 0;
     lo_infinite * (lo_infinite - 1) === 0;
     hi_infinite * (hi_infinite - 1) === 0;
@@ -75,7 +75,7 @@ template SetAbsent(L, D) {
     path.leaf <== leaf.digest;
     path.index_bit <== index_bit;
     path.sibling <== sibling;
-    for (var i = 0; i < 8; i++) { path.root[i] === root[i]; }
+    for (var i = 0; i < digest_len(); i++) { path.root[i] === root[i]; }
     // lo < value (or no lower end) and value < hi (or no upper end).
     component aboveLo = Compare(L);
     aboveLo.a <== limb;

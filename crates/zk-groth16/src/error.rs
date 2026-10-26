@@ -9,6 +9,8 @@ pub enum Groth16Error {
     Format(String),
     #[error("unknown or unapproved circuit `{0}`")]
     Unapproved(String),
+    #[error("artifact unavailable: {0}")]
+    Missing(String),
     #[error("witness: {0}")]
     Witness(#[from] WitnessError),
     #[error("proving failed: {0}")]
@@ -17,4 +19,8 @@ pub enum Groth16Error {
     Rejected,
     #[error("randomness unavailable: {0}")]
     Randomness(String),
+    #[error("trusted setup: {0}")]
+    Setup(String),
+    #[error("untrusted setup: {0}")]
+    Untrusted(String),
 }

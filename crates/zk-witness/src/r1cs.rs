@@ -104,7 +104,7 @@ fn read_lc<F: Field>(
         };
         terms.push(Term { wire, coef });
     }
-    Ok(normalize::<F>(terms))
+    Ok(terms)
 }
 
 struct Header {
@@ -176,7 +176,20 @@ fn split_sections(bytes: &[u8]) -> Result<BTreeMap<u32, &[u8]>> {
     Ok(sections)
 }
 
+/// The r1cs with every linear combination sorted by wire, each wire once with a non-zero coefficient.
 pub fn parse<F: Field>(bytes: &[u8]) -> Result<R1cs<F::Element>> {
+    let mut r1cs = parse_raw::<F>(bytes)?;
+    for c in &mut r1cs.constraints {
+        for lc in [&mut c.a, &mut c.b, &mut c.c] {
+            *lc = normalize::<F>(std::mem::take(lc));
+        }
+    }
+    Ok(r1cs)
+}
+
+/// The r1cs with its terms exactly as stored in the file (order, duplicates and zeros kept), as
+/// tools that re-encode the constraints byte for byte (snarkjs `zkey new`) read them.
+pub fn parse_raw<F: Field>(bytes: &[u8]) -> Result<R1cs<F::Element>> {
     let sections = split_sections(bytes)?;
     let section = |kind: u32| {
         sections

@@ -1,4 +1,4 @@
-//! A bundled circuit ready to prove.
+//! An approved circuit with a verified proving key, ready to prove.
 
 use ark_bn254::Fr;
 use ark_serialize::CanonicalSerialize;
@@ -6,17 +6,16 @@ use zeroize::Zeroize;
 use zk_witness::{FieldInputs, LinearCombination, WitnessCalculator};
 
 use crate::{
-    bundle,
-    commit::random_scalar,
     field::Bn254,
     prover,
     qap::{Matrix, Qap},
+    random::random_scalar,
     verifier::{VerifyingKey, PROOF_BYTES},
     zkey::{self, ProvingKey},
     Groth16Error, Result,
 };
 
-/// One of the bundled predicate circuits with its proving key.
+/// One of the approved predicate circuits with its proving key (see [`crate::Setup`]).
 pub struct Circuit {
     calculator: WitnessCalculator<Bn254>,
     proving_key: ProvingKey,
@@ -35,12 +34,11 @@ fn matrix(rows: impl Iterator<Item = LinearCombination<Fr>>) -> Matrix {
 }
 
 impl Circuit {
-    /// Load an approved bundled circuit (see [`crate::circuits`]); fails if its r1cs and zkey do not
+    /// The circuit from artifacts [`crate::Setup`] has checked; fails if the r1cs and zkey do not
     /// describe the same system.
-    pub fn bundled(name: &str) -> Result<Self> {
-        let artifacts = bundle::approved(name)?;
-        let calculator = WitnessCalculator::<Bn254>::in_field(artifacts.r1cs, artifacts.sym)?;
-        let key = zkey::parse(artifacts.zkey)?;
+    pub(crate) fn new(name: &str, r1cs: &[u8], sym: &str, zkey: &[u8]) -> Result<Self> {
+        let calculator = WitnessCalculator::<Bn254>::in_field(r1cs, sym)?;
+        let key = zkey::parse(zkey)?;
         let r1cs = calculator.r1cs();
         let rows = || r1cs.constraints.iter();
         let qap = Qap::new(
@@ -99,41 +97,5 @@ impl Circuit {
             proof: bytes,
             public_signals: witness.public_signals,
         })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use ark_bn254::{G1Affine, G2Affine};
-    use serde_json::Value;
-
-    fn g1(p: &G1Affine) -> Value {
-        serde_json::json!([p.x.to_string(), p.y.to_string(), "1"])
-    }
-
-    fn g2(p: &G2Affine) -> Value {
-        serde_json::json!([
-            [p.x.c0.to_string(), p.x.c1.to_string()],
-            [p.y.c0.to_string(), p.y.c1.to_string()],
-            ["1", "0"]
-        ])
-    }
-
-    /// The zkey reader agrees with snarkjs's own export of every verification key.
-    #[test]
-    fn verifying_keys_match_the_snarkjs_exports() {
-        let data = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/groth16");
-        for name in crate::circuits() {
-            let text = std::fs::read_to_string(data.join(format!("{name}.vkey.json"))).unwrap();
-            let expected: Value = serde_json::from_str(&text).unwrap();
-            let vk = &Circuit::bundled(name).unwrap().proving_key.vk;
-            assert_eq!(expected["vk_alpha_1"], g1(&vk.alpha_g1), "{name}");
-            assert_eq!(expected["vk_beta_2"], g2(&vk.beta_g2), "{name}");
-            assert_eq!(expected["vk_gamma_2"], g2(&vk.gamma_g2), "{name}");
-            assert_eq!(expected["vk_delta_2"], g2(&vk.delta_g2), "{name}");
-            let ic: Vec<Value> = vk.ic.iter().map(g1).collect();
-            assert_eq!(expected["IC"], Value::Array(ic), "{name}");
-        }
     }
 }

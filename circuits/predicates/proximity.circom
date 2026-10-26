@@ -38,8 +38,8 @@ template AbsDiff(L) {
 // `radius_sq` (2L limbs, computed by the verifier from the claim). (lt, eq, gt) select the
 // comparison like `CompareToBound`.
 template Distance(L) {
-    signal input x_commitment[8];
-    signal input y_commitment[8];
+    signal input x_commitment[digest_len()];
+    signal input y_commitment[digest_len()];
     signal input signed;
     signal input center_x[L];
     signal input center_y[L];
@@ -48,9 +48,9 @@ template Distance(L) {
     signal input accept_gt;
     signal input radius_sq[2 * L];
     signal input x_limb[L];
-    signal input x_blinding[8];
+    signal input x_blinding[blinding_len()];
     signal input y_limb[L];
-    signal input y_blinding[8];
+    signal input y_blinding[blinding_len()];
     signed * (signed - 1) === 0;
     accept_lt * (accept_lt - 1) === 0;
     accept_eq * (accept_eq - 1) === 0;

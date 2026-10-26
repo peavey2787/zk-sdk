@@ -6,12 +6,11 @@ use crate::ZkError;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Scheme {
     /// Spartan-WHIR over KoalaBear with Poseidon2 commitments: transparent (no trusted setup),
-    /// post-quantum, and the only scheme for every predicate family.
+    /// post-quantum, and the default.
     #[default]
     SpartanWhir,
     /// Groth16 over BN254 with Poseidon commitments: 128-byte proofs and fast proving, but it relies
-    /// on a trusted setup (docs/GROTH16_SETUP.md) and is not post-quantum. Supports `opens`,
-    /// `compare`, `range` and `compare_committed`, alone or in conjunctions.
+    /// on a trusted setup (docs/GROTH16_SETUP.md) and is not post-quantum. Supports every family.
     Groth16,
 }
 
@@ -20,6 +19,30 @@ impl Scheme {
         match self {
             Self::SpartanWhir => "spartan-whir",
             Self::Groth16 => "groth16",
+        }
+    }
+
+    /// Field elements per commitment digest, blinding and Merkle node.
+    pub(super) fn digest_len(self) -> usize {
+        match self {
+            Self::SpartanWhir => super::hash::DIGEST_ELEMENTS,
+            Self::Groth16 => 1,
+        }
+    }
+
+    /// The prefix this scheme's text forms carry: none for Spartan-WHIR, `groth16:` for Groth16.
+    pub(super) fn text_prefix(self) -> &'static str {
+        match self {
+            Self::SpartanWhir => "",
+            Self::Groth16 => "groth16:",
+        }
+    }
+
+    /// The scheme of a text form and the text after its prefix.
+    pub(super) fn split_text(text: &str) -> (Self, &str) {
+        match text.strip_prefix("groth16:") {
+            Some(rest) => (Self::Groth16, rest),
+            None => (Self::SpartanWhir, text),
         }
     }
 }

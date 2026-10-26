@@ -2,6 +2,7 @@
 mod args;
 mod commands;
 mod dispatch;
+mod groth16;
 mod io;
 mod predicate;
 

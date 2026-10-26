@@ -14,6 +14,10 @@
 .DS_Store
 
 !/testdata/**
+# Groth16 keys are made by each setup's users, never shipped (see docs/GROTH16_SETUP.md)
+/testdata/groth16/*.zkey
 /web/pkg/
 /web/pkg-threads/
 /web/circuits/
+/web/groth16/
+/web/ptau/

@@ -223,16 +223,151 @@ mod predicates {
 
     #[test]
     fn every_family_proves_and_verifies_in_separate_processes() {
-        core_families("spartan-whir");
+        core_families("spartan-whir", &[]);
+    }
+
+    fn groth16(args: &[&str]) -> String {
+        let out = zk(&[&["groth16"], args].concat());
+        assert!(
+            out.status.success(),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8(out.stdout).unwrap()
+    }
+
+    /// A new setup for `circuits` and the trust list authorizing it: `(pack, trust)`.
+    fn trusted_setup(dir: &Path, circuits: &str) -> (PathBuf, PathBuf) {
+        let (pack, trust) = (dir.join("setup.zkg16keys"), dir.join("setup.trust"));
+        groth16(&["new", "--circuits", circuits, "--out", path(&pack)]);
+        groth16(&["verify", "--keys", path(&pack), "--trust-out", path(&trust)]);
+        (pack, trust)
     }
 
     #[test]
     fn groth16_families_prove_and_verify_in_separate_processes() {
-        core_families("groth16");
+        let dir = tempfile::tempdir().unwrap();
+        let (pack, trust) = trusted_setup(
+            dir.path(),
+            "open_32,compare_32,range_32,compare_committed_64",
+        );
+        core_families(
+            "groth16",
+            &[
+                "--groth16-keys",
+                path(&pack),
+                "--groth16-trust",
+                path(&trust),
+            ],
+        );
+    }
+
+    /// A setup created, extended with a beacon, exported and imported (snarkjs's zkey files) and
+    /// verified, with every contribution in its transcript; proofs verify only where the verifier
+    /// authorized the setup, and damaged or uncontributed keys are refused.
+    #[test]
+    fn groth16_setups_are_extended_verified_and_authorized_in_separate_processes() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = |name: &str| dir.path().join(name);
+        let (first, second) = (file("first.zkg16keys"), file("second.zkg16keys"));
+        let circuit = ["--circuits", "compare_32"];
+        groth16(
+            &[
+                &["new", "--name", "alice", "--out", path(&first)],
+                &circuit[..],
+            ]
+            .concat(),
+        );
+        let beacon = ["--beacon", "0badc0de", "--beacon-exponent", "10"];
+        let contribute = ["contribute", "--keys", path(&first), "--out", path(&second)];
+        groth16(&[&contribute[..], &["--name", "bob"], &beacon].concat());
+        let trust = file("second.trust");
+        let report = groth16(&[
+            "verify",
+            "--keys",
+            path(&second),
+            "--trust-out",
+            path(&trust),
+        ]);
+        assert!(report.contains("#1 alice") && report.contains("#2 bob beacon 0badc0de 2^10"));
+        let setup_id = fs::read_to_string(&trust).unwrap();
+        assert!(report.contains(&format!("VALID: setup {}", setup_id.trim())));
+
+        let zkeys = file("zkeys");
+        groth16(&["export", "--keys", path(&second), "--dir", path(&zkeys)]);
+        let imported = file("imported.zkg16keys");
+        groth16(
+            &[
+                &["import", "--dir", path(&zkeys), "--out", path(&imported)],
+                &circuit[..],
+            ]
+            .concat(),
+        );
+        assert_eq!(fs::read(&imported).unwrap(), fs::read(&second).unwrap());
+
+        let (age, secret) = commit_in("groth16", dir.path(), "age", "u32", "20");
+        let claim_file = claim(
+            dir.path(),
+            "ge",
+            &format!(r#"{{"kind":"compare","commitment":"{age}","op":"ge","bound":"18"}}"#),
+        );
+        let proof = file("ge.proof");
+        let common = ["--claim", path(&claim_file), "--proof", path(&proof)];
+        let keys = ["--groth16-keys", path(&second)];
+        ok(&[&["prove", "--secrets", path(&secret)], &common[..], &keys].concat());
+        ok(&[
+            &["verify"],
+            &common[..],
+            &keys,
+            &["--groth16-trust", path(&trust)],
+        ]
+        .concat());
+        let first_trust = file("first.trust");
+        groth16(&[
+            "verify",
+            "--keys",
+            path(&first),
+            "--trust-out",
+            path(&first_trust),
+        ]);
+        for refused in [vec![], vec!["--groth16-trust", path(&first_trust)]] {
+            let args = [&["verify"], &common[..], &keys, &refused].concat();
+            assert!(!run(&args).status.success(), "{refused:?}");
+        }
+
+        let mut damaged = fs::read(&second).unwrap();
+        let middle = damaged.len() / 2;
+        damaged[middle] ^= 1;
+        let bad = file("bad.zkg16keys");
+        fs::write(&bad, damaged).unwrap();
+        assert!(!zk(&["groth16", "verify", "--keys", path(&bad)])
+            .status
+            .success());
+        let initial = file("initial");
+        fs::create_dir(&initial).unwrap();
+        let zkey = initial.join("compare_32.zkey");
+        groth16(&["initial", "--circuit", "compare_32", "--out", path(&zkey)]);
+        let uncontributed = file("uncontributed.zkg16keys");
+        groth16(
+            &[
+                &[
+                    "import",
+                    "--dir",
+                    path(&initial),
+                    "--out",
+                    path(&uncontributed),
+                ],
+                &circuit[..],
+            ]
+            .concat(),
+        );
+        assert!(!zk(&["groth16", "verify", "--keys", path(&uncontributed)])
+            .status
+            .success());
     }
 
     /// Opening, comparison, range and committed comparison, which both schemes support.
-    fn core_families(scheme: &str) {
+    fn core_families(scheme: &str, setup: &[&str]) {
         let dir = tempfile::tempdir().unwrap();
         let (age, age_secret) = commit_in(scheme, dir.path(), "age", "u32", "20");
         let (low, low_secret) = commit_in(scheme, dir.path(), "low", "i64", "-3");
@@ -271,29 +406,13 @@ mod predicates {
                 .map(|s| path(s))
                 .collect::<Vec<_>>()
                 .join(",");
-            ok(&[
-                "prove",
-                "--claim",
-                path(&claim_file),
-                "--secrets",
-                &list,
-                "--proof",
-                path(&proof),
-            ]);
-            ok(&[
-                "verify",
-                "--claim",
-                path(&claim_file),
-                "--proof",
-                path(&proof),
-            ]);
+            let prove = ["prove", "--secrets", &list, "--proof", path(&proof)];
+            ok(&[&prove[..], &["--claim", path(&claim_file)], setup].concat());
+            let verify = ["verify", "--proof", path(&proof)];
+            ok(&[&verify[..], &["--claim", path(&claim_file)], setup].concat());
             let altered = claim(dir.path(), "altered", &altered);
-            assert!(
-                !run(&["verify", "--claim", path(&altered), "--proof", path(&proof)])
-                    .status
-                    .success(),
-                "{name}"
-            );
+            let altered = [&verify[..], &["--claim", path(&altered)], setup].concat();
+            assert!(!run(&altered).status.success(), "{name}");
         }
     }
 

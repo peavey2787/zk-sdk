@@ -136,6 +136,7 @@ fn a_revoked_credential_cannot_be_presented_as_unrevoked() {
 #[test]
 fn json_entry_points_present_an_adult_holder_with_an_unrevoked_credential() {
     let issued = predicate::credential_issue(
+        "spartan-whir",
         "i32",
         r#"[{"attribute":"25","serial":"11","expiry":"5000"},{"attribute":"17","serial":"12","expiry":"5000"}]"#,
     )

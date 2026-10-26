@@ -16,6 +16,7 @@
   #log div { font: 13px/1.4 ui-monospace, monospace; padding: .15rem 0; }
   .good { color: #0a7a2f; } .bad { color: #b00020; } .warn { color: #8a5a00; }
   .note { color: #555; font-size: .85rem; }
+  progress { width: 100%; }
 </style>
 </head>
 <body>
@@ -30,7 +31,7 @@ responsive during multi-second proofs. Private values never leave this tab. Back
   <label>Integer type <select id="type"></select></label>
   <label>Proof system <select id="scheme">
     <option value="spartan-whir" selected>Spartan-WHIR (transparent, post-quantum)</option>
-    <option value="groth16">Groth16 (trusted setup, not post-quantum; opens/compare/range/pairs only)</option>
+    <option value="groth16">Groth16 (128-byte proofs; trusted setup, not post-quantum)</option>
   </select></label>
   <label id="rowValueA">Private value <input id="valueA" type="text" value="20"></label>
   <label id="rowValueB">Second private value <input id="valueB" type="text" value="30"></label>
@@ -52,6 +53,33 @@ responsive during multi-second proofs. Private values never leave this tab. Back
   <label id="rowHi">Range high <input id="hi" type="text" value="65"></label>
   <label id="rowEnds"><input id="loInclusive" type="checkbox" checked> low end inclusive
     <input id="hiInclusive" type="checkbox" checked> high end inclusive</label>
+</fieldset>
+
+<fieldset id="trustedSetup" class="hidden">
+  <legend>Trusted Setup</legend>
+  <p class="note">Groth16 proves with per-circuit keys from a trusted setup, and none ships with this page. Each key
+  starts from the published Hermez Powers of Tau (checked against its published hash) and gains one contribution per
+  participant; proofs are sound if at least one contributor discarded their secret. Your contributions are made in
+  this tab from fresh randomness that never leaves WebAssembly. Every key is checked against phase 1 before use, and
+  key packs work unchanged with <code>zk groth16</code> and <code>snarkjs zkey verify</code>. Verifiers accept proofs
+  only under the setups they authorize below. This Groth16 implementation has not been independently audited.</p>
+  <label>Your name in the public transcript (optional) <input id="contributor" type="text"></label>
+  <label>Circuits for a new setup <select id="setupScope">
+    <option value="claim" selected>this claim's circuits</option>
+    <option value="all">all approved circuits</option>
+  </select></label>
+  <div class="row">
+    <button id="setupCreate">Create new setup</button>
+    <button id="setupContribute" disabled>Contribute to the setup in use</button>
+    <button id="setupDownload" disabled>Download key pack</button>
+  </div>
+  <label>Import an existing setup (key pack) <input id="setupImport" type="file" accept=".zkg16keys"></label>
+  <progress id="setupProgress" class="hidden" value="0" max="1"></progress>
+  <p>Setup in use: <strong id="setupStatus"></strong></p>
+  <label>Authorized for verification: setup or key ids, one per line
+    <textarea id="setupTrust" spellcheck="false"></textarea></label>
+  <div class="row"><button id="setupTrustCurrent">Authorize the setup in use</button></div>
+  <label>Contribution transcript <textarea id="setupTranscript" readonly spellcheck="false"></textarea></label>
 </fieldset>
 
 <fieldset>

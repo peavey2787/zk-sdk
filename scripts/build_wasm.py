@@ -3,6 +3,10 @@
 web/pkg is the single-threaded bundle (any page). web/pkg-threads proves on every core through rayon
 over Web Workers; it needs shared-memory atomics, which only a pinned nightly with a rebuilt std
 provides today, and a cross-origin-isolated page (web/worker.js picks the bundle at runtime).
+web/groth16 holds the approved Groth16 circuits (r1cs and sym) and web/ptau the published phase-1
+file, which the worker fetches on demand to create, contribute to and check trusted setups (too
+large to embed; the WASM side checks every file against its pinned or published hash). No keys are
+shipped: every setup is made by its users.
 """
 import os
 import shutil
@@ -48,6 +52,18 @@ def main() -> int:
     for name in CIRCUITS:
         for suffix in ("r1cs", "sym"):
             shutil.copy(ROOT / "testdata" / name / f"{name}.{suffix}", target)
+    groth16, ptau = ROOT / "web" / "groth16", ROOT / "web" / "ptau"
+    for directory in (groth16, ptau):
+        shutil.rmtree(directory, ignore_errors=True)
+        directory.mkdir()
+    for suffix in ("r1cs", "sym"):
+        for artifact in (ROOT / "testdata" / "groth16").glob(f"*.{suffix}"):
+            shutil.copy(artifact, groth16)
+    phase1 = sorted((ROOT / "target" / "ptau").glob("powersOfTau28_hez_final_*.ptau"))
+    if not phase1:
+        print("FAIL: no phase-1 file in target/ptau (python scripts/groth16_setup.py --fetch)")
+        return 1
+    shutil.copy(min(phase1, key=lambda f: int(f.stem.rsplit("_", 1)[1])), ptau)
     print("PASS: web bundle built")
     return 0
 

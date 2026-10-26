@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# usage: ./run-all-linux.sh [fast|full|perf]   (default: fast)
+# usage: ./run-all-linux.sh [fast|full|groth16-all|perf]   (default: fast)
 set -euo pipefail
 cd "$(dirname "$0")"
 command -v cargo >/dev/null || { echo "FAIL: Cargo toolchain not installed"; exit 1; }

@@ -3,8 +3,9 @@
 //! operands in a product, so the circuit is chosen deterministically from the claim's shape.
 
 use super::claim::{Op, Operand};
-use super::commit::{Commitment, DIGEST_ELEMENTS};
+use super::commit::Commitment;
 use super::int::{IntType, Number};
+use super::scheme::Scheme;
 use super::statement::{
     array, common_type, digest, elements, scalar, signed, Field, Slot, Statement,
 };
@@ -14,8 +15,6 @@ use zk_groth16::Fr;
 /// The most committed terms one sum can combine (the larger `sum8` circuit).
 pub const MAX_TERMS: usize = 8;
 const SMALL_TERMS: usize = 4;
-const ZERO_DIGEST: [u64; 8] = [0; 8];
-
 /// A public constant must be a non-negative amount that fits the width of the committed type, so
 /// the constant folded into the sum can never exceed the limbs reserved for it.
 pub(super) fn amount(ty: IntType, name: &str, number: Number) -> Result<u128> {
@@ -78,7 +77,7 @@ pub(super) fn sum(
         plus.len(),
     );
     let mut commitments: Vec<Fr> = terms.iter().flat_map(Commitment::signals).collect();
-    commitments.resize(capacity * DIGEST_ELEMENTS, Fr::from(0u8));
+    commitments.resize(capacity * terms[0].scheme().digest_len(), Fr::from(0u8));
     let [lt, eq, gt] = op.flags();
     let fields = vec![
         elements("commitment", commitments),
@@ -122,6 +121,7 @@ fn operand_fields(
     names: &[&'static str; 4],
     operand: Operand,
     ty: IntType,
+    scheme: Scheme,
     index: usize,
 ) -> Result<(Vec<Field>, Slot)> {
     match operand {
@@ -135,7 +135,7 @@ fn operand_fields(
         )),
         Operand::Public(number) => Ok((
             vec![
-                array(names[0], ZERO_DIGEST.to_vec()),
+                elements(names[0], vec![Fr::from(0u8); scheme.digest_len()]),
                 scalar(names[1], 1),
                 array(names[2], ty.limbs(ty.encode(number)?)),
             ],
@@ -161,11 +161,12 @@ fn arith_statement(
     };
     let committed: Vec<Commitment> = (0..4).filter_map(committed_at).collect();
     let ty = common_type(&committed)?;
+    let scheme = committed[0].scheme();
     let mut fields = Vec::new();
     let mut slots = Vec::new();
     for ((operand, names), position) in operands.into_iter().zip(&OPERANDS).zip(claim_order) {
         let index = (0..position).filter(|p| committed_at(*p).is_some()).count();
-        let (mut operand_fields, slot) = operand_fields(names, operand, ty, index)?;
+        let (mut operand_fields, slot) = operand_fields(names, operand, ty, scheme, index)?;
         fields.append(&mut operand_fields);
         slots.push(slot);
     }

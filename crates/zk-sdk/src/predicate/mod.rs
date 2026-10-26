@@ -34,10 +34,11 @@ mod semantics;
 mod set;
 mod statement;
 mod transition;
+mod trusted_setup;
 
 pub use api::{
-    commit, credential_issue, credential_present, describe, prove, set_commitment, set_path,
-    transition_claim, verify, Committed, LoweredTransition,
+    claim_groth16_circuits, commit, credential_issue, credential_present, describe, prove,
+    set_commitment, set_path, transition_claim, verify, Committed, LoweredTransition,
 };
 pub use arithmetic::MAX_TERMS;
 pub use claim::{Op, Operand, Predicate};
@@ -52,4 +53,9 @@ pub use scheme::Scheme;
 pub use set::{SetCommitment, SetPath, SetTree, SET_DEPTHS};
 pub use statement::Statement;
 pub use transition::{Rule, Transition};
-pub use zk_groth16::Fr;
+pub use trusted_setup::{groth16_circuits, groth16_directory, load_ceremony, phase1_path};
+pub use zk_groth16::{
+    phase1_file_name, phase1_powers, Beacon, Ceremony, Contribution, Directory as Groth16Directory,
+    Fr, KeyId, KeyPack, KeyReport, Memory as Groth16Memory, Phase1, Setup as Groth16Setup,
+    SetupReport, Trust,
+};

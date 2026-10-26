@@ -190,7 +190,7 @@ impl Statement {
             .map_or(Scheme::SpartanWhir, Commitment::scheme)
     }
 
-    /// Every commitment must share one scheme, and Groth16 has circuits for only some families.
+    /// Every commitment must share one scheme, and a Groth16 statement must name an approved circuit.
     fn checked_scheme(self) -> Result<Self> {
         let scheme = self.scheme();
         if let Some(other) = self.committed.iter().find(|c| c.scheme() != scheme) {
@@ -201,7 +201,7 @@ impl Statement {
         }
         if scheme == Scheme::Groth16 && !zk_groth16::circuits().any(|c| c == self.circuit) {
             return Err(ZkError::Predicate(format!(
-                "`{}` has no groth16 circuit; groth16 commitments support opens, compare, range                  and compare_committed",
+                "`{}` is not an approved groth16 circuit",
                 self.circuit
             )));
         }
@@ -329,6 +329,18 @@ impl Predicate {
     }
 }
 
+/// Fails unless a published structure (`what`, of `scheme`) belongs to `commitment`'s scheme.
+pub(super) fn same_scheme(commitment: &Commitment, scheme: Scheme, what: &str) -> Result<()> {
+    if commitment.scheme() == scheme {
+        Ok(())
+    } else {
+        Err(ZkError::Predicate(format!(
+            "a {} commitment cannot be checked against a {scheme} {what}",
+            commitment.scheme()
+        )))
+    }
+}
+
 /// The most intervals one `InAnyRange` claim can union (the `anyrange` circuit's slots).
 pub const MAX_RANGES: usize = 4;
 
@@ -373,6 +385,7 @@ fn set_statement(commitment: &Commitment, set: &SetCommitment, absent: bool) -> 
             set.ty()
         )));
     }
+    same_scheme(commitment, set.scheme(), "set")?;
     let (family, root) = if absent {
         ("absent", set.gaps())
     } else {
@@ -385,7 +398,7 @@ fn set_statement(commitment: &Commitment, set: &SetCommitment, absent: bool) -> 
         vec![
             digest("commitment", commitment),
             signed(ty),
-            array("root", root.iter().map(|w| u64::from(*w)).collect()),
+            elements("root", root.signals()),
         ],
     )?;
     Ok(statement.with_path(PathShape {
@@ -506,9 +519,11 @@ mod tests {
         );
         let mixed = Predicate::compare_committed(g, Op::Lt, commitment(IntType::U64));
         assert!(mixed.statement().is_err(), "schemes never mix");
-        assert!(
-            Predicate::multiply(g, 2, g).statement().is_err(),
-            "no groth16 circuit"
+        let multiply = Predicate::multiply(g, 2, g).statement().unwrap();
+        assert_eq!(
+            multiply.circuit(),
+            "arith_64",
+            "every family has a groth16 circuit"
         );
     }
 }

@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Validation driver behind run-all-windows.cmd and run-all-linux.sh.
 
-fast: layout, pinned revisions, fmt, clippy -D warnings, tests (real prove/verify, no mocks).
-full: fast plus the wasm bundle, real-browser test, native/wasm interop matrix and cargo audit
-      (security and correctness gates).
+fast: layout, pinned revisions, fmt, clippy -D warnings, the published Groth16 phase-1 file, tests
+      (real prove/verify on ephemeral trusted setups, no mocks, no stored keys).
+full: fast plus the wasm bundle, real-browser test, native/wasm interop matrix, the Groth16
+      reference check on representative circuits and cargo audit (security and correctness gates).
+groth16-all: the Groth16 reference check on every circuit (separate: it takes longer).
 perf: separate performance regression gates (native and real-browser p50/p95/p99 against the
       500 ms target / 1000 ms ceiling). A miss is reported as such; it is never a reason to lower
       security parameters or raise the threshold.
@@ -26,6 +28,7 @@ FAST = [
     ("pins", None),
     ("fmt", CARGO + ["fmt", "--all", "--", "--check"]),
     ("clippy", CARGO + ["clippy", "--workspace", "--all-targets", "--all-features", "--", "-D", "warnings"]),
+    ("phase1", [PY, "scripts/groth16_setup.py", "--fetch"]),
     ("test", CARGO + ["test", "--workspace", "--all-targets", "--all-features", "--release"]),
 ]
 FULL = [
@@ -33,9 +36,13 @@ FULL = [
     ("browser", [PY, "scripts/browser_test.py"]),
     ("browser-predicates", [PY, "scripts/browser_test.py", "predicates-selftest.html", "1800"]),
     ("circuits", [PY, "scripts/build_circuits.py", "--check"]),
-    ("groth16-setup", [PY, "scripts/groth16_setup.py", "--check"]),
+    ("groth16-reference", [PY, "scripts/groth16_setup.py", "--reference"]),
     ("interop", [PY, "scripts/interop.py"]),
     ("audit", CARGO + ["audit", "--deny", "warnings"]),
+]
+GROTH16_ALL = [
+    ("phase1", [PY, "scripts/groth16_setup.py", "--fetch"]),
+    ("groth16-reference-all", [PY, "scripts/groth16_setup.py", "--reference", "--all"]),
 ]
 PERF = [
     ("wasm-build", [PY, "scripts/build_wasm.py"]),
@@ -74,11 +81,11 @@ def run(name, command) -> bool:
 
 
 def main(mode: str) -> int:
-    if mode not in ("fast", "full", "perf"):
-        print("usage: run_all.py [fast|full|perf]")
+    if mode not in ("fast", "full", "groth16-all", "perf"):
+        print("usage: run_all.py [fast|full|groth16-all|perf]")
         return 2
     OUT.mkdir(parents=True, exist_ok=True)
-    steps = {"fast": FAST, "full": FAST + FULL, "perf": PERF}[mode]
+    steps = {"fast": FAST, "full": FAST + FULL, "groth16-all": GROTH16_ALL, "perf": PERF}[mode]
     report = []
     for name, command in steps:
         start = time.monotonic()

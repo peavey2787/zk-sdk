@@ -12,12 +12,28 @@ use ark_ec::{
 };
 use ark_ff::{BigInt, BigInteger, PrimeField, Zero};
 
-use crate::{Groth16Error, Result};
+use crate::{
+    binfile,
+    points::{ELEMENT, G1_BYTES, G2_BYTES},
+    Groth16Error, Result,
+};
 
-const PROTOCOL_GROTH16: u32 = 1;
-const ELEMENT: usize = 32;
-const G1_BYTES: usize = 2 * ELEMENT;
-const G2_BYTES: usize = 4 * ELEMENT;
+pub(crate) const MAGIC: &[u8; 4] = b"zkey";
+pub(crate) const PROTOCOL_GROTH16: u32 = 1;
+/// Section ids: protocol, header (with delta), IC, coefficients, A, B1, B2, L, H, contributions.
+pub(crate) const PROTOCOL: u32 = 1;
+pub(crate) const HEADER: u32 = 2;
+pub(crate) const IC: u32 = 3;
+pub(crate) const COEFFICIENTS: u32 = 4;
+pub(crate) const A_QUERY: u32 = 5;
+pub(crate) const B1_QUERY: u32 = 6;
+pub(crate) const B2_QUERY: u32 = 7;
+pub(crate) const L_QUERY: u32 = 8;
+pub(crate) const H_QUERY: u32 = 9;
+pub(crate) const CONTRIBUTIONS: u32 = 10;
+/// Offset of `delta_g1` (then `delta_g2`) in the header: two moduli, three counts, alpha, beta
+/// (G1 and G2) and gamma.
+pub(crate) const DELTA_OFFSET: usize = 2 * (4 + ELEMENT) + 12 + 2 * G1_BYTES + 2 * G2_BYTES;
 
 /// The verifying-key points (`ic` holds one point per input, the constant wire first).
 pub struct VerifyingKeyPoints {
@@ -71,10 +87,6 @@ impl<'a> Reader<'a> {
         Ok(u32::from_le_bytes(self.take(4)?.try_into().expect("4")))
     }
 
-    fn u64(&mut self) -> Result<u64> {
-        Ok(u64::from_le_bytes(self.take(8)?.try_into().expect("8")))
-    }
-
     fn count(&mut self) -> Result<usize> {
         Ok(self.u32()? as usize)
     }
@@ -111,6 +123,16 @@ impl<'a> Reader<'a> {
     }
 }
 
+/// A G1 point from LEM bytes, checked to be canonical, on the curve and in the subgroup.
+pub(crate) fn checked_g1(bytes: &[u8]) -> Result<G1Affine> {
+    Reader { bytes }.g1()
+}
+
+/// A G2 point from LEM bytes, checked like [`checked_g1`].
+pub(crate) fn checked_g2(bytes: &[u8]) -> Result<G2Affine> {
+    Reader { bytes }.g2()
+}
+
 fn in_group<C: SWCurveConfig>(point: Affine<C>) -> Result<Affine<C>> {
     if point.is_on_curve() && point.is_in_correct_subgroup_assuming_on_curve() {
         Ok(point)
@@ -119,20 +141,12 @@ fn in_group<C: SWCurveConfig>(point: Affine<C>) -> Result<Affine<C>> {
     }
 }
 
-fn sections(bytes: &[u8]) -> Result<BTreeMap<u32, &[u8]>> {
-    let mut r = Reader { bytes };
-    if r.take(4)? != b"zkey" || r.u32()? != 1 {
-        return Err(malformed("not a zkey v1 file"));
-    }
-    let mut out = BTreeMap::new();
-    for _ in 0..r.u32()? {
-        let kind = r.u32()?;
-        let size = usize::try_from(r.u64()?).map_err(|_| malformed("section too large"))?;
-        if out.insert(kind, r.take(size)?).is_some() {
-            return Err(malformed("duplicate section"));
-        }
-    }
-    Ok(out)
+/// Every section of a zkey, by id.
+pub(crate) fn sections(bytes: &[u8]) -> Result<BTreeMap<u32, &[u8]>> {
+    Ok(binfile::sections(bytes, MAGIC)?
+        .into_iter()
+        .map(|(kind, range)| (kind, &bytes[range]))
+        .collect())
 }
 
 struct Header {
@@ -202,12 +216,17 @@ pub fn parse(bytes: &[u8]) -> Result<Zkey> {
             .copied()
             .ok_or_else(|| malformed(&format!("missing section {kind}")))
     };
-    if (Reader { bytes: section(1)? }).u32()? != PROTOCOL_GROTH16 {
+    if (Reader {
+        bytes: section(PROTOCOL)?,
+    })
+    .u32()?
+        != PROTOCOL_GROTH16
+    {
         return Err(malformed("not a Groth16 key"));
     }
-    let h = header(section(2)?)?;
+    let h = header(section(HEADER)?)?;
     let private = h.n_vars - h.n_public - 1;
-    let ic = points(&sections, 3, h.n_public + 1, G1_BYTES, |r| r.g1())?;
+    let ic = points(&sections, IC, h.n_public + 1, G1_BYTES, |r| r.g1())?;
     let proving_key = ProvingKey {
         vk: VerifyingKeyPoints {
             alpha_g1: h.alpha_g1,
@@ -218,11 +237,11 @@ pub fn parse(bytes: &[u8]) -> Result<Zkey> {
         },
         beta_g1: h.beta_g1,
         delta_g1: h.delta_g1,
-        a_query: points(&sections, 5, h.n_vars, G1_BYTES, |r| r.g1())?,
-        b_g1_query: points(&sections, 6, h.n_vars, G1_BYTES, |r| r.g1())?,
-        b_g2_query: points(&sections, 7, h.n_vars, G2_BYTES, |r| r.g2())?,
-        l_query: points(&sections, 8, private, G1_BYTES, |r| r.g1())?,
-        h_query: points(&sections, 9, h.domain_size, G1_BYTES, |r| r.g1())?,
+        a_query: points(&sections, A_QUERY, h.n_vars, G1_BYTES, |r| r.g1())?,
+        b_g1_query: points(&sections, B1_QUERY, h.n_vars, G1_BYTES, |r| r.g1())?,
+        b_g2_query: points(&sections, B2_QUERY, h.n_vars, G2_BYTES, |r| r.g2())?,
+        l_query: points(&sections, L_QUERY, private, G1_BYTES, |r| r.g1())?,
+        h_query: points(&sections, H_QUERY, h.domain_size, G1_BYTES, |r| r.g1())?,
     };
     Ok(Zkey {
         n_vars: h.n_vars,

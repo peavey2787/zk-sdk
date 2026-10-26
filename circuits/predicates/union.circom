@@ -8,13 +8,13 @@ include "../lib/limbs.circom";
 // lo > hi is empty. With `miss[i] = 1 - enabled[i] * inside[i]` the value is in the union exactly
 // when the product of all four misses is zero, which needs only quadratic constraints.
 template InAnyRange(L) {
-    signal input commitment[8];
+    signal input commitment[digest_len()];
     signal input signed;
     signal input enabled[4];
     signal input lo[4 * L];
     signal input hi[4 * L];
     signal input limb[L];
-    signal input blinding[8];
+    signal input blinding[blinding_len()];
     signed * (signed - 1) === 0;
     component opens = CommitmentOpens(L);
     opens.commitment <== commitment;

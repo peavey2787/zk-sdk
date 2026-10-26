@@ -18,7 +18,7 @@ include "../lib/limbs.circom";
 // so the host folds the public offsets into plus_total and minus_total (L + 1 limbs each) and the
 // circuit only sums non-negative integers. (lt, eq, gt) select the comparison like `CompareToBound`.
 template WeightedSum(L, N) {
-    signal input commitment[N * 8];
+    signal input commitment[N * digest_len()];
     signal input signed;
     signal input plus[N];
     signal input minus[N];
@@ -28,7 +28,7 @@ template WeightedSum(L, N) {
     signal input accept_eq;
     signal input accept_gt;
     signal input limb[N][L];
-    signal input blinding[N][8];
+    signal input blinding[N][blinding_len()];
     signed * (signed - 1) === 0;
     accept_lt * (accept_lt - 1) === 0;
     accept_eq * (accept_eq - 1) === 0;
@@ -54,8 +54,8 @@ template WeightedSum(L, N) {
         opens[i].signed <== signed;
         opens[i].limb <== limb[i];
         opens[i].blinding <== blinding[i];
-        for (var j = 0; j < 8; j++) {
-            (plus[i] + minus[i]) * (opens[i].digest[j] - commitment[i * 8 + j]) === 0;
+        for (var j = 0; j < digest_len(); j++) {
+            (plus[i] + minus[i]) * (opens[i].digest[j] - commitment[i * digest_len() + j]) === 0;
         }
         for (var k = 0; k < L; k++) {
             pos_term[i][k] <== plus[i] * limb[i][k];
@@ -89,16 +89,16 @@ template WeightedSum(L, N) {
 // `divide` = 1 turns the relation into Euclidean division of t by y:  t = x*y + z  with y > 0 and
 // 0 <= z < y (quotient x, remainder z), all in true (signed) values; the host sets (op) = equality.
 template MulAdd(L) {
-    signal input x_commitment[8];
+    signal input x_commitment[digest_len()];
     signal input x_is_public;
     signal input x_public[L];
-    signal input y_commitment[8];
+    signal input y_commitment[digest_len()];
     signal input y_is_public;
     signal input y_public[L];
-    signal input z_commitment[8];
+    signal input z_commitment[digest_len()];
     signal input z_is_public;
     signal input z_public[L];
-    signal input t_commitment[8];
+    signal input t_commitment[digest_len()];
     signal input t_is_public;
     signal input t_public[L];
     signal input signed;
@@ -107,13 +107,13 @@ template MulAdd(L) {
     signal input accept_gt;
     signal input divide;
     signal input x_limb[L];
-    signal input x_blinding[8];
+    signal input x_blinding[blinding_len()];
     signal input y_limb[L];
-    signal input y_blinding[8];
+    signal input y_blinding[blinding_len()];
     signal input z_limb[L];
-    signal input z_blinding[8];
+    signal input z_blinding[blinding_len()];
     signal input t_limb[L];
-    signal input t_blinding[8];
+    signal input t_blinding[blinding_len()];
     signed * (signed - 1) === 0;
     divide * (divide - 1) === 0;
     accept_lt * (accept_lt - 1) === 0;

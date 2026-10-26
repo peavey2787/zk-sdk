@@ -13,20 +13,20 @@ include "../lib/limbs.circom";
 // Revocation is a separate claim over the committed serial (absence from the issuer's revocation set),
 // bound to this one by sharing the serial commitment.
 template Credential(L, D) {
-    signal input a_commitment[8];
-    signal input s_commitment[8];
-    signal input e_commitment[8];
+    signal input a_commitment[digest_len()];
+    signal input s_commitment[digest_len()];
+    signal input e_commitment[digest_len()];
     signal input signed;
-    signal input root[8];
+    signal input root[digest_len()];
     signal input now[4];
     signal input a_limb[L];
-    signal input a_blinding[8];
+    signal input a_blinding[blinding_len()];
     signal input s_limb[4];
-    signal input s_blinding[8];
+    signal input s_blinding[blinding_len()];
     signal input e_limb[4];
-    signal input e_blinding[8];
+    signal input e_blinding[blinding_len()];
     signal input index_bit[D];
-    signal input sibling[D * 8];
+    signal input sibling[D * digest_len()];
     signed * (signed - 1) === 0;
     component attribute = CommitmentOpens(L);
     attribute.commitment <== a_commitment;
@@ -55,7 +55,7 @@ template Credential(L, D) {
     path.leaf <== leaf.digest;
     path.index_bit <== index_bit;
     path.sibling <== sibling;
-    for (var i = 0; i < 8; i++) { path.root[i] === root[i]; }
+    for (var i = 0; i < digest_len(); i++) { path.root[i] === root[i]; }
     component notExpired = Compare(4);
     notExpired.a <== e_limb;
     notExpired.b <== now;

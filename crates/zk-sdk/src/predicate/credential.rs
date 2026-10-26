@@ -13,6 +13,9 @@
 //! This is deliberately a different claim, circuit and hash domain from `opens` (knowledge of a
 //! committed secret) and from set membership: possessing a secret proves nothing about an issuer.
 //!
+//! An issuer is built for one [`Scheme`]; its credentials are presented with that scheme's
+//! commitments.
+//!
 //! Trust: the issuer's root is only as honest as the issuer; whoever controls the tree can mint a
 //! credential for anyone. That is what an issuer is.
 
@@ -25,13 +28,13 @@ use super::claim::Predicate;
 use super::commit::{Commitment, Opening};
 use super::compose::{Conjunction, ConjunctionWitness};
 use super::engine::Witness;
-use super::hash::{sponge, Digest, CREDENTIAL_DOMAIN};
+use super::hash::{Node, CREDENTIAL_DOMAIN};
 use super::int::{IntType, Number};
+use super::scheme::Scheme;
 use super::set::{
-    fit_depth, levels, parse_words, siblings_of, top, zero_hashes, PathText, SetPath, SetTree,
-    SET_DEPTHS,
+    fit_depth, levels, siblings_of, top, zero_hashes, PathText, SetPath, SetTree, SET_DEPTHS,
 };
-use super::statement::{array, digest, limbs, signed, PathShape, Slot, Statement};
+use super::statement::{digest, elements, limbs, same_scheme, signed, PathShape, Slot, Statement};
 use crate::{Result, ZkError};
 
 const SERIAL_TYPE: IntType = IntType::U64;
@@ -40,7 +43,7 @@ fn error(message: impl Into<String>) -> ZkError {
     ZkError::Predicate(message.into())
 }
 
-fn leaf(ty: IntType, attribute: u128, serial: u64, expiry: u64) -> Digest {
+fn leaf(scheme: Scheme, ty: IntType, attribute: u128, serial: u64, expiry: u64) -> Node {
     let attribute = ty.limbs(attribute);
     let mut message = vec![u32::from(ty.signed), attribute.len() as u32];
     message.extend(attribute.iter().map(|l| *l as u32));
@@ -52,7 +55,7 @@ fn leaf(ty: IntType, attribute: u128, serial: u64, expiry: u64) -> Digest {
                 .map(|l| *l as u32),
         );
     }
-    sponge(CREDENTIAL_DOMAIN, &message)
+    Node::leaf(scheme, CREDENTIAL_DOMAIN, &message)
 }
 
 fn time(number: Number, what: &str) -> Result<u64> {
@@ -67,7 +70,7 @@ fn time(number: Number, what: &str) -> Result<u64> {
 pub struct IssuerCommitment {
     ty: IntType,
     depth: usize,
-    root: Digest,
+    root: Node,
 }
 
 impl IssuerCommitment {
@@ -75,30 +78,38 @@ impl IssuerCommitment {
         self.ty
     }
 
-    /// Canonical text form `issuer:<type>:<depth>:<64 hex digits>`.
+    pub fn scheme(&self) -> Scheme {
+        self.root.scheme()
+    }
+
+    /// Canonical text form `[groth16:]issuer:<type>:<depth>:<64 hex digits>`.
     pub fn to_text(&self) -> String {
-        let hex: String = self.root.iter().map(|d| format!("{d:08x}")).collect();
-        format!("issuer:{}:{}:{hex}", self.ty, self.depth)
+        let prefix = self.scheme().text_prefix();
+        format!(
+            "{prefix}issuer:{}:{}:{}",
+            self.ty,
+            self.depth,
+            self.root.to_hex()
+        )
     }
 
     pub fn from_text(text: &str) -> Result<Self> {
         let invalid = || ZkError::Format(format!("`{text}` is not an issuer commitment"));
-        let mut parts = text.splitn(4, ':');
+        let (scheme, rest) = Scheme::split_text(text);
+        let mut parts = rest.splitn(4, ':');
         let (Some("issuer"), Some(ty), Some(depth), Some(hex)) =
             (parts.next(), parts.next(), parts.next(), parts.next())
         else {
             return Err(invalid());
         };
         let depth: usize = depth.parse().map_err(|_| invalid())?;
-        if !SET_DEPTHS.contains(&depth) || hex.len() != 64 {
+        if !SET_DEPTHS.contains(&depth) {
             return Err(invalid());
         }
         Ok(Self {
             ty: ty.parse().map_err(|_| invalid())?,
             depth,
-            root: parse_words(hex)
-                .and_then(|words| words.try_into().ok())
-                .ok_or_else(invalid)?,
+            root: Node::from_hex(scheme, hex).ok_or_else(invalid)?,
         })
     }
 }
@@ -140,13 +151,23 @@ pub struct CredentialEntry {
 pub struct CredentialIssuer {
     commitment: IssuerCommitment,
     entries: Vec<CredentialEntry>,
-    levels: Vec<Vec<Digest>>,
+    levels: Vec<Vec<Node>>,
 }
 
 impl CredentialIssuer {
-    /// Build the tree for `entries` of attribute type `ty`. Fails when an attribute does not fit
-    /// `ty`, two entries share a serial, or there are too many entries for the largest depth.
+    /// Build the Spartan-WHIR tree for `entries` of attribute type `ty`. Fails when an attribute
+    /// does not fit `ty`, two entries share a serial, or there are too many entries for the
+    /// largest depth.
     pub fn new(ty: IntType, entries: impl IntoIterator<Item = CredentialEntry>) -> Result<Self> {
+        Self::new_in(Scheme::SpartanWhir, ty, entries)
+    }
+
+    /// Build the tree in `scheme`, whose commitments the credentials are then presented with.
+    pub fn new_in(
+        scheme: Scheme,
+        ty: IntType,
+        entries: impl IntoIterator<Item = CredentialEntry>,
+    ) -> Result<Self> {
         let entries: Vec<CredentialEntry> = entries.into_iter().collect();
         let mut serials: Vec<u64> = entries.iter().map(|e| e.serial).collect();
         serials.sort_unstable();
@@ -156,9 +177,17 @@ impl CredentialIssuer {
         let depth = fit_depth(entries.len())?;
         let leaves = entries
             .iter()
-            .map(|e| Ok(leaf(ty, ty.encode(e.attribute)?, e.serial, e.expiry)))
+            .map(|e| {
+                Ok(leaf(
+                    scheme,
+                    ty,
+                    ty.encode(e.attribute)?,
+                    e.serial,
+                    e.expiry,
+                ))
+            })
             .collect::<Result<Vec<_>>>()?;
-        let zeros = zero_hashes(depth);
+        let zeros = zero_hashes(scheme, depth);
         let levels = levels(leaves, &zeros);
         Ok(Self {
             commitment: IssuerCommitment {
@@ -189,8 +218,14 @@ impl CredentialIssuer {
             serial,
             expiry: entry.expiry,
             path: SetPath::member(
+                self.commitment.scheme(),
                 index as u64,
-                siblings_of(&self.levels, self.commitment.depth, index),
+                siblings_of(
+                    self.commitment.scheme(),
+                    &self.levels,
+                    self.commitment.depth,
+                    index,
+                ),
             ),
         })
     }
@@ -279,9 +314,10 @@ impl Credential {
     /// Present the credential to a verifier whose clock reads `now`: fresh commitments to the
     /// attribute, serial and expiry, and the claim over them. Nothing links two presentations.
     pub fn present(&self, now: u64) -> Result<Presentation> {
-        let (attribute, a) = Commitment::commit(self.issuer.ty, self.attribute)?;
-        let (serial, s) = Commitment::commit(SERIAL_TYPE, self.serial)?;
-        let (expiry, e) = Commitment::commit(SERIAL_TYPE, self.expiry)?;
+        let scheme = self.issuer.scheme();
+        let (attribute, a) = Commitment::commit_in(scheme, self.issuer.ty, self.attribute)?;
+        let (serial, s) = Commitment::commit_in(scheme, SERIAL_TYPE, self.serial)?;
+        let (expiry, e) = Commitment::commit_in(scheme, SERIAL_TYPE, self.expiry)?;
         Ok(Presentation {
             claim: Predicate::credential(attribute, serial, expiry, self.issuer, now),
             attribute,
@@ -368,13 +404,7 @@ pub(super) fn refusal(
     path: Option<&SetPath>,
 ) -> Result<Option<String>> {
     let path = path.ok_or_else(|| error("a credential claim needs the credential's path"))?;
-    if path.siblings_len() != issuer.depth {
-        return Err(error(format!(
-            "the path has {} levels but the issuer's tree has depth {}",
-            path.siblings_len(),
-            issuer.depth
-        )));
-    }
+    path.check_shape(issuer.scheme(), issuer.depth)?;
     let [attribute, serial, expiry] = held;
     let (serial, expiry) = (time(serial, "the serial")?, time(expiry, "the expiry")?);
     if expiry < time(now, "now")? {
@@ -383,7 +413,8 @@ pub(super) fn refusal(
             time(now, "now")?
         )));
     }
-    let leaf = leaf(issuer.ty, issuer.ty.encode(attribute)?, serial, expiry);
+    let encoded = issuer.ty.encode(attribute)?;
+    let leaf = leaf(issuer.scheme(), issuer.ty, encoded, serial, expiry);
     Ok((path.root(leaf) != issuer.root).then(|| {
         "these values are not a credential of this issuer (the path does not reach its root)"
             .to_owned()
@@ -404,6 +435,7 @@ pub(super) fn statement(
             issuer.ty
         )));
     }
+    same_scheme(attribute, issuer.scheme(), "issuer")?;
     for (name, commitment) in [("serial", serial), ("expiry", expiry)] {
         if commitment.ty() != SERIAL_TYPE {
             return Err(error(format!(
@@ -417,7 +449,7 @@ pub(super) fn statement(
         digest("s_commitment", serial),
         digest("e_commitment", expiry),
         signed(ty),
-        array("root", issuer.root.iter().map(|w| u64::from(*w)).collect()),
+        elements("root", issuer.root.signals()),
         limbs("now", SERIAL_TYPE, now)?,
     ];
     let slots = ["a_", "s_", "e_"]
@@ -516,6 +548,39 @@ mod tests {
         assert!(
             cross.unwrap().is_some(),
             "another issuer's root rejects the path"
+        );
+    }
+
+    #[test]
+    fn groth16_issuers_present_with_groth16_commitments() {
+        let entries = [entry(25, 1, 2_000)];
+        let issuer = CredentialIssuer::new_in(Scheme::Groth16, IntType::I32, entries).unwrap();
+        let commitment = issuer.commitment();
+        assert!(commitment.to_text().starts_with("groth16:issuer:i32:8:"));
+        assert_eq!(
+            IssuerCommitment::from_text(&commitment.to_text()).unwrap(),
+            commitment
+        );
+        let credential = issuer.credential(1).unwrap();
+        assert_eq!(judged(&credential, 50), None);
+        let presentation = credential.present(50).unwrap();
+        assert_eq!(presentation.attribute().scheme(), Scheme::Groth16);
+        let statement = presentation.claim().statement().unwrap();
+        assert_eq!(
+            (statement.circuit(), statement.scheme()),
+            ("cred8_32", Scheme::Groth16)
+        );
+        let spartan = CredentialIssuer::new(IntType::I32, entries).unwrap();
+        let held = [Number::from(25), Number::from(1u8), Number::from(2_000u32)];
+        let cross = refusal(
+            &spartan.commitment(),
+            Number::from(0u8),
+            held,
+            Some(&credential.path),
+        );
+        assert!(
+            cross.is_err(),
+            "a groth16 path never checks against a spartan root"
         );
     }
 

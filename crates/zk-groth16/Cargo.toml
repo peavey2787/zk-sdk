@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-description = "Groth16 over BN254 (arkworks curves) for the built-in predicates: snarkjs zkeys from a public Powers of Tau plus a documented phase-2 contribution"
+description = "Groth16 over BN254 (arkworks curves) for the built-in predicates, with snarkjs-compatible trusted-setup ceremonies from a published Powers of Tau"
 
 [dependencies]
 zk-witness = { path = "../zk-witness" }
@@ -14,17 +14,19 @@ ark-ff.workspace = true
 ark-poly.workspace = true
 ark-serialize.workspace = true
 ark-std.workspace = true
+blake2.workspace = true
 getrandom = "0.4"
 light-poseidon.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
 zeroize.workspace = true
+rayon = { workspace = true, optional = true }
 
 [dev-dependencies]
 serde_json.workspace = true
 
 [features]
-parallel = ["ark-ec/parallel", "ark-ff/parallel", "ark-poly/parallel", "ark-std/parallel"]
+parallel = ["ark-ec/parallel", "ark-ff/parallel", "ark-poly/parallel", "ark-std/parallel", "dep:rayon"]
 
 # Native builds use every core; wasm32 is single-threaded unless built with `parallel`.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -32,3 +34,4 @@ ark-ec = { workspace = true, features = ["parallel"] }
 ark-ff = { workspace = true, features = ["parallel"] }
 ark-poly = { workspace = true, features = ["parallel"] }
 ark-std = { workspace = true, features = ["parallel"] }
+rayon.workspace = true

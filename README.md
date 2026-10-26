@@ -34,7 +34,7 @@ zk.verify(&claim, &proof)?;                                      // needs only t
 
 Opening, comparison, range, committed comparison, and exact-integer arithmetic (sums, balances, conservation with fees and explicit mint/burn, products, bounded division), over `u32 i32 u64 i64 u128 i128`, through Rust, the `zk predicate` CLI and the browser, with portable proofs verified across all of them. See [PREDICATES](docs/PREDICATES.md).
 
-Commitments default to Spartan-WHIR (transparent, post-quantum). For opening, comparison, range and committed comparison you can instead commit with `Scheme::Groth16` (`zk predicate commit --scheme groth16`): 136-byte proofs in 20-60 ms, at the cost of a trusted setup and no post-quantum security ([GROTH16_SETUP](docs/GROTH16_SETUP.md)).
+Commitments default to Spartan-WHIR (transparent, post-quantum). For any predicate you can instead commit with `Scheme::Groth16` (`zk predicate commit --scheme groth16`; sets and issuers with `--scheme groth16` too): 136-byte proofs, at the cost of a trusted setup and no post-quantum security. No Groth16 keys ship with zk-sdk: you create a setup from the published Hermez Powers of Tau, others contribute to it and anyone can verify it, with `zk groth16 new/contribute/verify` or the browser's Trusted Setup section; verifiers accept only setups they authorize ([GROTH16_SETUP](docs/GROTH16_SETUP.md)). Groth16 soundness has not been independently verified.
 
 ## Six operations
 
@@ -86,7 +86,7 @@ Fast: layout, pinned revisions, `fmt`, `clippy -D warnings`, tests. Full adds th
 
 - `zk-core`: formats, policy, key/proof binding, backend trait
 - `zk-spartan-whir`: the Spartan-WHIR backend
-- `zk-groth16`: Groth16 over BN254 for the core predicates (~20-60 ms proofs, 128-byte proofs; trusted setup, not post-quantum; see [GROTH16_SETUP](docs/GROTH16_SETUP.md))
+- `zk-groth16`: Groth16 over BN254 for every predicate family (~20-60 ms for the core four, 128-byte proofs; trusted setup, not post-quantum; see [GROTH16_SETUP](docs/GROTH16_SETUP.md))
 - `zk-witness`: pure-Rust Circom witness solver, generic over the field (KoalaBear, BN254; native and wasm)
 - `zk-sdk`: facade, `portable` byte API, native `files`
 - `zk-cli`: the `zk` binary

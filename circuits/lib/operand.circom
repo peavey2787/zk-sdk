@@ -3,16 +3,16 @@ include "commit.circom";
 
 // An integer operand that is either PUBLIC (its limbs are a public input) or COMMITTED (its limbs
 // are private and bound to a public commitment by opening it). `is_public` selects which. For a
-// committed operand the commitment must be the Poseidon2 commitment of (signed, limbs, blinding);
+// committed operand the commitment must be the field's commitment (commit.circom) of (signed, limbs, blinding);
 // for a public operand the commitment inputs are ignored and the private inputs are all zero.
 // `value` is the canonical-limb encoding the rest of the circuit computes with.
 template Operand(L) {
-    signal input commitment[8];
+    signal input commitment[digest_len()];
     signal input is_public;
     signal input public_limb[L];
     signal input signed;
     signal input limb[L];
-    signal input blinding[8];
+    signal input blinding[blinding_len()];
     signal output value[L];
     is_public * (is_public - 1) === 0;
     component opens = Commit(L);
@@ -21,7 +21,7 @@ template Operand(L) {
     opens.blinding <== blinding;
     signal committed;
     committed <== 1 - is_public;
-    for (var i = 0; i < 8; i++) { committed * (opens.digest[i] - commitment[i]) === 0; }
+    for (var i = 0; i < digest_len(); i++) { committed * (opens.digest[i] - commitment[i]) === 0; }
     signal pick[L];
     for (var k = 0; k < L; k++) {
         pick[k] <== is_public * (public_limb[k] - limb[k]);

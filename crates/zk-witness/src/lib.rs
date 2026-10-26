@@ -14,7 +14,9 @@ use std::collections::BTreeMap;
 pub use error::{Result, WitnessError};
 pub use field::{Field, KoalaBear};
 pub use inputs::{parse_json as parse_inputs_json, Inputs};
-pub use r1cs::{Constraint, LinearCombination, R1cs, Term};
+pub use r1cs::{
+    parse as parse_r1cs, parse_raw as parse_r1cs_raw, Constraint, LinearCombination, R1cs, Term,
+};
 
 /// Named inputs over the field `F` (KoalaBear inputs are [`Inputs`]).
 pub type FieldInputs<F> = BTreeMap<String, <F as Field>::Element>;

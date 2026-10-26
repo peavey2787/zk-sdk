@@ -36,7 +36,7 @@ async function measure(family, bits) {
   // A published set of 100 (depth 8) or 300 (depth 20) even numbers; the holder commits to 2 (a
   // member) or 3 (a stranger), and the Merkle path travels as the last secret.
   const setClaim = async (family, depth) => {
-    const base = { type, values: JSON.stringify(Array.from({ length: depth === 8 ? 100 : 300 }, (_, i) => String(i * 2))) };
+    const base = { scheme: "spartan-whir", type, values: JSON.stringify(Array.from({ length: depth === 8 ? 100 : 300 }, (_, i) => String(i * 2))) };
     const setCommitment = (await runner.run("predicateSetCommitment", base)).result;
     const absent = family === "absent";
     const holder = await commit(type, absent ? "3" : "2");

@@ -30,3 +30,6 @@ ark-poly = "0.5"
 ark-serialize = "0.5"
 ark-std = "0.5"
 light-poseidon = "=0.4.1"
+# BLAKE2b-512 for snarkjs-compatible Powers of Tau and phase-2 transcripts.
+blake2 = "0.10"
+rayon = "1.10"

@@ -11,10 +11,14 @@ const USAGE: &str = "usage:
   zk inspect --proof F
   zk bench   --pk F --r1cs F --sym F --input F.json [--runs N]   (p50/p95/p99 per run)
 built-in predicates (no circuit or setup needed):
-{PREDICATE}";
+{PREDICATE}
+groth16 trusted setups (for --scheme groth16):
+{GROTH16}";
 
 fn usage() -> String {
-    USAGE.replace("{PREDICATE}", crate::predicate::USAGE)
+    USAGE
+        .replace("{PREDICATE}", crate::predicate::USAGE)
+        .replace("{GROTH16}", crate::groth16::USAGE)
 }
 
 fn parse_policy(flags: &Flags) -> Result<SecurityPolicy, String> {
@@ -152,6 +156,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
         "bench" => bench(&flags(&["pk", "r1cs", "sym", "input", "runs"])?),
         "inspect" => inspect(&flags(&["proof"])?),
         "predicate" => crate::predicate::run(rest),
+        "groth16" => crate::groth16::run(rest),
         _ => Err(usage()),
     }
 }
