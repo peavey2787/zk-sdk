@@ -34,7 +34,30 @@ zk.verify(&claim, &proof)?;                                      // needs only t
 
 Opening, comparison, range, committed comparison, and exact-integer arithmetic (sums, balances, conservation with fees and explicit mint/burn, products, bounded division), over `u32 i32 u64 i64 u128 i128`, through Rust, the `zk predicate` CLI and the browser, with portable proofs verified across all of them. See [PREDICATES](docs/PREDICATES.md).
 
-Commitments default to Spartan-WHIR (transparent, post-quantum). For any predicate you can instead commit with `Scheme::Groth16` (`zk predicate commit --scheme groth16`; sets and issuers with `--scheme groth16` too): 136-byte proofs, at the cost of a trusted setup and no post-quantum security. No Groth16 keys ship with zk-sdk: you create a setup from the published Hermez Powers of Tau, others contribute to it and anyone can verify it, with `zk groth16 new/contribute/verify` or the browser's Trusted Setup section; verifiers accept only setups they authorize ([GROTH16_SETUP](docs/GROTH16_SETUP.md)). Groth16 soundness has not been independently verified.
+## Proof systems
+
+Choose per commitment; the verifier takes the scheme from the claim, never from the proof.
+
+| | Spartan-WHIR (default) | Groth16 (`Scheme::Groth16`, `--scheme groth16`) |
+|---|---|---|
+| Security | transparent, post-quantum | trusted setup, not post-quantum (BN254) |
+| Proof | 0.6-1 MB | 136 B |
+| Native prove | 0.16 s and up | 20-60 ms |
+
+### Groth16 trusted setups
+
+No keys ship with zk-sdk. You create a setup from the published Hermez Powers of Tau, others add contributions, and anyone can verify it. Keys are snarkjs-compatible.
+
+```sh
+python scripts/groth16_setup.py --fetch                        # published phase 1, hash-checked
+zk groth16 new --circuits all --name alice --out a.zkg16keys   # or a list of circuits
+zk groth16 contribute --keys a.zkg16keys --name bob --out b.zkg16keys
+zk groth16 verify --keys b.zkg16keys --trust-out b.trust       # transcript + setup id
+zk predicate prove  ... --groth16-keys b.zkg16keys
+zk predicate verify ... --groth16-keys b.zkg16keys --groth16-trust b.trust
+```
+
+Verifiers accept only the setups they authorize. The browser demo has the same create, contribute, import and authorize steps. See [GROTH16_SETUP](docs/GROTH16_SETUP.md).
 
 ## Six operations
 
@@ -94,3 +117,7 @@ Fast: layout, pinned revisions, `fmt`, `clippy -D warnings`, tests. Full adds th
 - `web`: static browser demos (generic circuits and predicates); `circuits`, `testdata`: sources and compiled vectors
 
 [Architecture](docs/ARCHITECTURE.md) · [Development](docs/DEVELOPMENT.md) · [Security](docs/SECURITY.md) · [Progress](docs/PROGRESS.md) · [Roadmap](docs/ROADMAP.md)
+
+## License
+
+GPL-2.0-or-later. See [LICENSE](LICENSE).
