@@ -84,7 +84,8 @@ Fast: layout, pinned revisions, `fmt`, `clippy -D warnings`, tests. Full adds th
 
 - `zk-core`: formats, policy, key/proof binding, backend trait
 - `zk-spartan-whir`: the Spartan-WHIR backend
-- `zk-witness`: pure-Rust Circom witness solver (native and wasm)
+- `zk-groth16`: Groth16 over BN254 for the core predicates (~20-60 ms proofs, 128-byte proofs; trusted setup, not post-quantum; see [GROTH16_SETUP](docs/GROTH16_SETUP.md))
+- `zk-witness`: pure-Rust Circom witness solver, generic over the field (KoalaBear, BN254; native and wasm)
 - `zk-sdk`: facade, `portable` byte API, native `files`
 - `zk-cli`: the `zk` binary
 - `zk-wasm`: wasm-bindgen exports

@@ -1,5 +1,5 @@
 pragma circom 2.2.0;
-include "../lib/poseidon2.circom";
+include "../lib/koalabear/poseidon2.circom";
 
 // Known-answer harness: exposes the bare permutation for differential testing against Plonky3.
 template Poseidon2Kat() {

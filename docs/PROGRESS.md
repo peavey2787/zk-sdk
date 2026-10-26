@@ -72,25 +72,12 @@ Native: Ryzen 7 5800X, 16 threads, 20 samples per circuit, whole prove call incl
 
 | Circuit | constraints | proof | native portable p50 / p95 | native optimized p50 / p95 | browser WASM p50 | verify native / browser |
 |---|---|---|---|---|---|---|
-| open_32 / 64 / 128 | 1867 / 1901 / 2885 | 633-726 KB | 1059 / 1134 / 1308 ms; 2758 / 2017 / 2834 | 161 / 178 / 238 ms; 250 / 293 / 312 | 10.8 / 6.8 / 18.3 s | 23-42 / 43-53 ms |
-| compare_32 / 64 / 128 | 1989 / 2137 / 3349 | 631-728 KB | 1315 / 1558 / 1461 ms; 2251 / 2486 / 2565 | 222 / 183 / 232 ms; 348 / 309 / 295 | 12.9 / 19.6 / 14.8 s | 23-43 / 49-59 ms |
-| range_32 / 64 / 128 | 2103 / 2365 / 3805 | 725-730 KB | 1225 / 1348 / 1423 ms; 1690 / 2134 / 2045 | 219 / 226 / 224 ms; 338 / 285 / 311 | 10.5 / 14.1 / 9.7 s | 25-50 / 48-53 ms |
-| compare_committed_32 / 64 / 128 | 3821 / 3969 / 6097 | 726-824 KB | 1273 / 1550 / 1767 ms; 1917 / 2674 / 2982 | 231 / 255 / 347 ms; 327 / 308 / 516 | 11.0 / 12.4 / 11.9 s | 27-58 / 53-75 ms |
+| open_32 / 64 / 128 | 468 / 502 / 570 | 20.7 / 27.2 / 29.9 | 24.7 / 30.3 / 33.0 | 1.6-2.4 | 128 |
+| compare_32 / 64 / 128 | 590 / 738 / 1034 | 25.8 / 33.3 / 31.3 | 29.5 / 36.1 / 35.2 | 1.7-2.1 | 128 |
+| range_32 / 64 / 128 | 704 / 966 / 1490 | 27.7 / 38.1 / 29.7 | 33.4 / 45.8 / 35.9 | 1.5-2.1 | 128 |
+| compare_committed_32 / 64 / 128 | 1023 / 1171 / 1467 | 41.2 / 58.1 / 53.9 | 53.7 / 68.1 / 59.2 | 1.6-2.1 | 128 |
 
-Browser extras: wasm linear memory 16-63 MiB (cumulative over the run, one worker), longest main-thread stall while proving 1-18 ms (the page stays responsive), first prove per circuit (circuit load + key setup + prove) 7.6-32 s. Browser numbers are noisy (5 samples; the machine was not otherwise idle).
-
-**Target status (500 ms target, 1000 ms ceiling, p50):**
-- Native optimized (AVX2): **met** for every circuit (161-347 ms); p95 up to 516 ms.
-- Native portable: **missed** (1.06-1.77 s p50; p95 1.7-3.0 s).
-- Browser WASM: **missed** by 7-20x (6.8-19.6 s). Dominated by single-threaded proof-of-work grinding and unvectorised field arithmetic; the application must prove asynchronously (the demo does, in a Worker).
-
-**Update: AVX2 auto-dispatch and threaded browser proving (same machine, same parameters).** The portable `zk` now delegates to an installed `zk-avx2` sibling on AVX2/BMI2 CPUs. Native compare, 10 samples: portable p50 ~1045 ms (656-2478), dispatched p50 ~246 ms (133-350); proofs cross-verify between the two binaries. Browser on a cross-origin-isolated page (threaded bundle, 16 workers): compare prove p50 ~2.2 s (1.2-3.1 s) versus 13-20 s single-threaded; the 44-check browser predicate self-test went from 653 s to 53 s. Still above the 1000 ms browser ceiling: WASM has no Plonky3 vector code, so field arithmetic stays scalar. Pages without cross-origin isolation get the single-threaded numbers above.
-
-The standalone optimized binary refuses to start on CPUs without AVX2/BMI2; the portable `zk` only delegates to it when the CPU has both. Nothing above lowers any security parameter. Investigation of the browser path (WASM threads for grinding, upstream-approved schedules, other transparent backends) is open and tracked in ROADMAP; each option needs its own soundness review.
-
-**End-to-end soundness of the configured 116-bit target is still not independently recomputed.** Nothing here claims 116-bit post-quantum security.
-
-Verify ~17-32 ms; proof ~215 KB; vk ~3-8 KB.
+For the same families Spartan-WHIR (transparent, post-quantum) takes 161-347 ms p50 with AVX2.
 
 ## Known gaps
 

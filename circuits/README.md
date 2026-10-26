@@ -13,7 +13,7 @@ Comparison circuits (`lib/compare.circom`) are range-checked. The KoalaBear fiel
 
 ## Built-in predicate library
 
-`predicates/library.circom` holds `OpenCommitment`, `CompareToBound`, `InRange` and `CompareCommitted`, instantiated at 32/64/128 bits by 12 generated mains (`predicates/*_{32,64,128}.circom`). Values are 16-bit limbs (signed values are offset-binary), commitments are domain-separated Poseidon2 sponge digests (`lib/commit.circom`, constants generated from the pinned Plonky3 by `crates/zk-circuitgen`). The compiled circuits are bundled into the SDK; `crates/zk-sdk/src/predicate/approved.rs` records each SHA-256.
+`predicates/library.circom` holds `OpenCommitment`, `CompareToBound`, `InRange` and `CompareCommitted`, instantiated at 32/64/128 bits by 12 generated mains (`predicates/*_{32,64,128}.circom`). Values are 16-bit limbs (signed values are offset-binary), commitments are domain-separated Poseidon2 sponge digests (`lib/koalabear/commit.circom`, constants generated from the pinned Plonky3 by `crates/zk-circuitgen`). The compiled circuits are bundled into the SDK; `crates/zk-sdk/src/predicate/approved.rs` records each SHA-256.
 
 Rebuild everything reproducibly (clones the pinned Circom fork into the git-ignored `target/toolchain/circom`; nothing outside this repository is touched):
 
@@ -21,6 +21,8 @@ Rebuild everything reproducibly (clones the pinned Circom fork into the git-igno
 python scripts/build_circuits.py          # rewrite testdata/predicates and approved.rs
 python scripts/build_circuits.py --check  # fail if a fresh build differs from the repository
 ```
+
+Field-specific gadgets live in `lib/koalabear/` and `lib/bn254/` and are selected with circom `-l`; `lib/opens.circom` is shared. The same `open`/`compare`/`range`/`compare_committed` mains are also built for BN254 (one-element Poseidon commitment, light-poseidon parameters) into `testdata/groth16/`, whose keys come from `scripts/groth16_setup.py` (see `docs/GROTH16_SETUP.md`).
 
 Other circuits are recompiled with the same compiler: `target/toolchain/circom/target/release/circom circuits/age_over.circom --prime koalabear --r1cs --sym -o testdata/age_over`.
 

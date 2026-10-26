@@ -33,6 +33,7 @@ FULL = [
     ("browser", [PY, "scripts/browser_test.py"]),
     ("browser-predicates", [PY, "scripts/browser_test.py", "predicates-selftest.html", "1800"]),
     ("circuits", [PY, "scripts/build_circuits.py", "--check"]),
+    ("groth16-setup", [PY, "scripts/groth16_setup.py", "--check"]),
     ("interop", [PY, "scripts/interop.py"]),
     ("audit", CARGO + ["audit", "--deny", "warnings"]),
 ]
@@ -41,6 +42,7 @@ PERF = [
     ("perf-native", [PY, "scripts/perf_gate.py"]),
     ("perf-browser", [PY, "scripts/browser_test.py", "perftest.html"]),
     ("perf-native-predicates", CARGO + ["run", "--release", "-p", "zk-sdk", "--example", "bench_predicates", "20"]),
+    ("perf-native-groth16", CARGO + ["test", "--release", "-p", "zk-groth16", "--test", "predicates", "--", "--ignored", "--nocapture"]),
     ("perf-browser-predicates", [PY, "scripts/browser_test.py", "predicates-perftest.html?n=5", "3600"]),
 ]
 

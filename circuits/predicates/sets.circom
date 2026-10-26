@@ -1,6 +1,6 @@
 pragma circom 2.2.0;
-include "../lib/commit.circom";
-include "../lib/merkle.circom";
+include "../lib/opens.circom";
+include "merkle.circom";
 include "../lib/compare.circom";
 
 // Set membership and non-membership of a committed value against a published Merkle root.

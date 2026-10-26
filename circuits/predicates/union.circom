@@ -1,5 +1,5 @@
 pragma circom 2.2.0;
-include "../lib/commit.circom";
+include "../lib/opens.circom";
 include "../lib/limbs.circom";
 
 // The committed value lies in at least one of four public closed intervals [lo_i, hi_i]. Slot i is

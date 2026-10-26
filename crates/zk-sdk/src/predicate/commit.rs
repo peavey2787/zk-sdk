@@ -2,7 +2,7 @@
 //!
 //! `digest = Poseidon2-sponge([signed, limb count, limbs.., blinding..])` over KoalaBear with
 //! Plonky3's width-16 permutation, rate 8, capacity `[DOMAIN, message length, 0..]`. The circuits in
-//! `circuits/lib/commit.circom` compute exactly this; `tests/commitment_circuit.rs` proves the two
+//! `circuits/lib/koalabear/commit.circom` compute exactly this; `tests/commitment_circuit.rs` proves the two
 //! agree. Commitments are binding up to the sponge's collision resistance (about 2^124 over eight
 //! 31-bit elements) and hiding while the blinding stays secret and uniformly random.
 

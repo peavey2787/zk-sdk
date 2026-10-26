@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/zk-circuitgen", "crates/zk-core", "crates/zk-witness", "crates/zk-spartan-whir", "crates/zk-sdk", "crates/zk-cli", "crates/zk-wasm"]
+members = ["crates/zk-circuitgen", "crates/zk-core", "crates/zk-witness", "crates/zk-spartan-whir", "crates/zk-groth16", "crates/zk-sdk", "crates/zk-cli", "crates/zk-wasm"]
 resolver = "2"
 
 [workspace.package]
@@ -22,3 +22,11 @@ thiserror = "2.0"
 tempfile = "3.15"
 zeroize = "1.8"
 serde_json = "1.0"
+# Groth16 over BN254. light-poseidon 0.4 is built on arkworks 0.5, so the whole stack stays on 0.5.
+ark-bn254 = "0.5"
+ark-ec = "0.5"
+ark-ff = "0.5"
+ark-poly = "0.5"
+ark-serialize = "0.5"
+ark-std = "0.5"
+light-poseidon = "=0.4.1"

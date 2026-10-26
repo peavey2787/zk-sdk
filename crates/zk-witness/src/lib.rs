@@ -1,5 +1,6 @@
-//! Portable circom witness calculator for KoalaBear R1CS. Pure Rust, so the same code runs on
-//! Windows, Linux and wasm32 with no C++ toolchain, WSL or Linux binary.
+//! Portable circom witness calculator. Pure Rust, so the same code runs on Windows, Linux and
+//! wasm32 with no C++ toolchain, WSL or Linux binary. KoalaBear is built in; other backends plug
+//! their own prime field in through [`Field`].
 mod error;
 mod field;
 mod inputs;
@@ -8,34 +9,60 @@ mod solve;
 mod sym;
 mod wtns;
 
+use std::collections::BTreeMap;
+
 pub use error::{Result, WitnessError};
+pub use field::{Field, KoalaBear};
 pub use inputs::{parse_json as parse_inputs_json, Inputs};
+pub use r1cs::{Constraint, LinearCombination, R1cs, Term};
 
-use r1cs::R1cs;
+/// Named inputs over the field `F` (KoalaBear inputs are [`Inputs`]).
+pub type FieldInputs<F> = BTreeMap<String, <F as Field>::Element>;
 
-/// A circuit ready to generate witnesses.
-pub struct WitnessCalculator {
-    r1cs: R1cs,
+/// A circuit ready to generate witnesses over the field `F`.
+pub struct WitnessCalculator<F: Field = KoalaBear> {
+    r1cs: R1cs<F::Element>,
     signals: sym::SignalMap,
 }
 
 /// A generated witness plus the public signals it implies (circom order: outputs, then public
 /// inputs). The public signals are derived by the prover and are not an independent statement.
-pub struct Witness {
-    pub wtns: Vec<u8>,
-    pub public_signals: Vec<u64>,
+pub struct Witness<F: Field = KoalaBear> {
+    /// Every wire value, wire 0 (the constant 1) first.
+    pub assignment: Vec<F::Element>,
+    pub public_signals: Vec<F::Element>,
+}
+
+impl<F: Field> Witness<F> {
+    /// The witness as a circom `.wtns` file.
+    pub fn wtns(&self) -> Vec<u8> {
+        wtns::encode::<F>(&self.assignment)
+    }
 }
 
 impl WitnessCalculator {
+    /// A KoalaBear calculator.
     pub fn new(r1cs: &[u8], sym: &str) -> Result<Self> {
+        Self::in_field(r1cs, sym)
+    }
+}
+
+impl<F: Field> WitnessCalculator<F> {
+    /// A calculator over `F`; the `.r1cs` header prime must be F's modulus.
+    pub fn in_field(r1cs: &[u8], sym: &str) -> Result<Self> {
         Ok(Self {
-            r1cs: r1cs::parse(r1cs)?,
+            r1cs: r1cs::parse::<F>(r1cs)?,
             signals: sym::parse(sym)?,
         })
     }
 
+    /// The parsed constraint system.
+    pub fn r1cs(&self) -> &R1cs<F::Element> {
+        &self.r1cs
+    }
+
     /// Resolve named inputs to wires, rejecting unknown, non-input, duplicate and missing ones.
-    fn wire_inputs(&self, inputs: &Inputs) -> Result<Vec<(u32, u64)>> {
+    fn wire_inputs(&self, inputs: &FieldInputs<F>) -> Result<Vec<(u32, F::Element)>> {
         let range = self.r1cs.input_wires();
         let mut assigned = Vec::with_capacity(inputs.len());
         for (name, value) in inputs {
@@ -45,7 +72,7 @@ impl WitnessCalculator {
                 .copied()
                 .filter(|w| range.contains(w))
                 .ok_or_else(|| WitnessError::UnknownInput(name.clone()))?;
-            if *value >= field::P {
+            if !F::is_canonical(*value) {
                 return Err(WitnessError::NotCanonical(name.clone()));
             }
             assigned.push((wire, *value));
@@ -54,7 +81,7 @@ impl WitnessCalculator {
         Ok(assigned)
     }
 
-    fn require_all(&self, assigned: &[(u32, u64)]) -> Result<()> {
+    fn require_all(&self, assigned: &[(u32, F::Element)]) -> Result<()> {
         let missing = self.signals.iter().find(|(name, wire)| {
             name.starts_with("main.")
                 && self.r1cs.input_wires().contains(wire)
@@ -69,12 +96,12 @@ impl WitnessCalculator {
     }
 
     /// Generate and satisfiability-check a witness. Fails rather than emit an invalid one.
-    pub fn witness(&self, inputs: &Inputs) -> Result<Witness> {
-        let values = solve::solve(&self.r1cs, &self.wire_inputs(inputs)?)?;
-        let public = 1 + self.r1cs.n_pub_out as usize + self.r1cs.n_pub_in as usize;
+    pub fn witness(&self, inputs: &FieldInputs<F>) -> Result<Witness<F>> {
+        let assignment = solve::solve::<F>(&self.r1cs, &self.wire_inputs(inputs)?)?;
+        let public_signals = assignment[1..=self.r1cs.n_public()].to_vec();
         Ok(Witness {
-            wtns: wtns::encode(&values),
-            public_signals: values[1..public].to_vec(),
+            assignment,
+            public_signals,
         })
     }
 }
@@ -97,7 +124,7 @@ mod tests {
     fn matches_the_circom_cpp_reference_witness_byte_for_byte() {
         let calc = WitnessCalculator::new(R1CS, SYM).unwrap();
         let witness = calc.witness(&inputs(20, 18)).unwrap();
-        assert_eq!(witness.wtns, REFERENCE);
+        assert_eq!(witness.wtns(), REFERENCE);
         assert_eq!(witness.public_signals, vec![1, 18]);
     }
 

@@ -1,7 +1,8 @@
 pragma circom 2.2.0;
-include "../lib/commit.circom";
+include "../lib/opens.circom";
 
-// Built-in predicate circuits, parameterised by the limb count L (2, 4, 8 = 32, 64, 128 bits).
+// Built-in predicate circuits, compiled for each field (the commitment comes from the field's
+// commit.circom; see lib/opens.circom) and parameterised by the limb count L (2, 4, 8 = 32, 64, 128 bits).
 // Every statement is about a value committed with `Commit(L)`. Values are the unsigned limbs of the
 // biased representation: a signed integer v of width w is committed and compared as v + 2^(w-1),
 // which preserves order. `signed` only records which interpretation the commitment was made under.
@@ -11,10 +12,10 @@ include "../lib/commit.circom";
 
 // Knowledge of an opening: the prover knows (value, blinding) behind the public commitment.
 template OpenCommitment(L) {
-    signal input commitment[8];
+    signal input commitment[digest_len()];
     signal input signed;
     signal input limb[L];
-    signal input blinding[8];
+    signal input blinding[blinding_len()];
     signed * (signed - 1) === 0;
     component opens = CommitmentOpens(L);
     opens.commitment <== commitment;
@@ -25,14 +26,14 @@ template OpenCommitment(L) {
 
 // committed value (op) public bound.
 template CompareToBound(L) {
-    signal input commitment[8];
+    signal input commitment[digest_len()];
     signal input signed;
     signal input accept_lt;
     signal input accept_eq;
     signal input accept_gt;
     signal input bound[L];
     signal input limb[L];
-    signal input blinding[8];
+    signal input blinding[blinding_len()];
     signed * (signed - 1) === 0;
     accept_lt * (accept_lt - 1) === 0;
     accept_eq * (accept_eq - 1) === 0;
@@ -58,14 +59,14 @@ template CompareToBound(L) {
 
 // lo (<|<=) committed value (<|<=) hi; each end is inclusive when its public flag is 1.
 template InRange(L) {
-    signal input commitment[8];
+    signal input commitment[digest_len()];
     signal input signed;
     signal input lo_inclusive;
     signal input hi_inclusive;
     signal input lo[L];
     signal input hi[L];
     signal input limb[L];
-    signal input blinding[8];
+    signal input blinding[blinding_len()];
     signed * (signed - 1) === 0;
     lo_inclusive * (lo_inclusive - 1) === 0;
     hi_inclusive * (hi_inclusive - 1) === 0;
@@ -95,16 +96,16 @@ template InRange(L) {
 // left (op) right for two commitments opened by the SAME prover. This is not a two-party
 // protocol: independent secret holders would need a separate secure-input protocol.
 template CompareCommitted(L) {
-    signal input left[8];
-    signal input right[8];
+    signal input left[digest_len()];
+    signal input right[digest_len()];
     signal input signed;
     signal input accept_lt;
     signal input accept_eq;
     signal input accept_gt;
     signal input left_limb[L];
-    signal input left_blinding[8];
+    signal input left_blinding[blinding_len()];
     signal input right_limb[L];
-    signal input right_blinding[8];
+    signal input right_blinding[blinding_len()];
     signed * (signed - 1) === 0;
     accept_lt * (accept_lt - 1) === 0;
     accept_eq * (accept_eq - 1) === 0;

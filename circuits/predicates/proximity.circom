@@ -1,5 +1,5 @@
 pragma circom 2.2.0;
-include "../lib/commit.circom";
+include "../lib/opens.circom";
 include "../lib/normalize.circom";
 include "../lib/limbs.circom";
 include "../lib/operand.circom";

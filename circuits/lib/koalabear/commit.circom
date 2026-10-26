@@ -1,6 +1,10 @@
 pragma circom 2.2.0;
 include "sponge.circom";
-include "limbs.circom";
+include "../limbs.circom";
+
+// Commitment shape shared with lib/opens.circom: 8-element digests and blindings.
+function digest_len() { return 8; }
+function blinding_len() { return 8; }
 
 // Value commitment: the Sponge (see sponge.circom) under commit_domain() over
 //     [signed, L, limb[0..L), blinding[0..8)]
@@ -21,17 +25,4 @@ template Commit(L) {
     for (var i = 0; i < L; i++) { sponge.message[2 + i] <== limb[i]; }
     for (var i = 0; i < 8; i++) { sponge.message[2 + L + i] <== blinding[i]; }
     for (var i = 0; i < 8; i++) { digest[i] <== sponge.digest[i]; }
-}
-
-// Constrains `commitment` to be the commitment to (signed, limb, blinding).
-template CommitmentOpens(L) {
-    signal input commitment[8];
-    signal input signed;
-    signal input limb[L];
-    signal input blinding[8];
-    component commit = Commit(L);
-    commit.signed <== signed;
-    commit.limb <== limb;
-    commit.blinding <== blinding;
-    for (var i = 0; i < 8; i++) { commit.digest[i] === commitment[i]; }
 }

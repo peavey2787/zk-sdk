@@ -1,45 +1,47 @@
-//! Parser for circom binary `.r1cs` files over a 4-byte prime field.
+//! Parser for circom binary `.r1cs` files over the field `F` (the header prime must be F's).
 
 use std::collections::BTreeMap;
 
-use crate::{
-    field::{add, P},
-    Result, WitnessError,
-};
+use crate::{field::Field, Result, WitnessError};
 
-const FIELD_BYTES: u32 = 4;
 const SECTION_HEADER: u32 = 1;
 const SECTION_CONSTRAINTS: u32 = 2;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Term {
+pub struct Term<E> {
     pub wire: u32,
-    pub coef: u64,
+    pub coef: E,
 }
 
-pub type LinearCombination = Vec<Term>;
+pub type LinearCombination<E> = Vec<Term<E>>;
 
+/// `a * b = c`.
 #[derive(Clone, Debug)]
-pub struct Constraint {
-    pub a: LinearCombination,
-    pub b: LinearCombination,
-    pub c: LinearCombination,
+pub struct Constraint<E> {
+    pub a: LinearCombination<E>,
+    pub b: LinearCombination<E>,
+    pub c: LinearCombination<E>,
 }
 
 #[derive(Clone, Debug)]
-pub struct R1cs {
+pub struct R1cs<E> {
     pub n_wires: u32,
     pub n_pub_out: u32,
     pub n_pub_in: u32,
     pub n_prv_in: u32,
-    pub constraints: Vec<Constraint>,
+    pub constraints: Vec<Constraint<E>>,
 }
 
-impl R1cs {
+impl<E> R1cs<E> {
     /// Wire indexes of circuit inputs: public inputs, then private inputs.
     pub fn input_wires(&self) -> std::ops::Range<u32> {
         let first = 1 + self.n_pub_out;
         first..first + self.n_pub_in + self.n_prv_in
+    }
+
+    /// Public signals (outputs, then public inputs), excluding the constant wire 0.
+    pub fn n_public(&self) -> usize {
+        (self.n_pub_out + self.n_pub_in) as usize
     }
 }
 
@@ -71,34 +73,38 @@ impl<'a> Reader<'a> {
 }
 
 /// Sort by wire and merge duplicate wires so every wire appears once, with a non-zero coefficient.
-fn normalize(terms: Vec<Term>) -> LinearCombination {
+fn normalize<F: Field>(terms: Vec<Term<F::Element>>) -> LinearCombination<F::Element> {
     let mut merged = BTreeMap::new();
     for term in terms {
-        let slot = merged.entry(term.wire).or_insert(0);
-        *slot = add(*slot, term.coef);
+        let slot = merged.entry(term.wire).or_insert(F::ZERO);
+        *slot = F::add(*slot, term.coef);
     }
     merged
         .into_iter()
-        .filter(|(_, coef)| *coef != 0)
+        .filter(|(_, coef)| *coef != F::ZERO)
         .map(|(wire, coef)| Term { wire, coef })
         .collect()
 }
 
-fn read_lc(reader: &mut Reader, n_wires: u32) -> Result<LinearCombination> {
+fn read_lc<F: Field>(
+    reader: &mut Reader,
+    n_wires: u32,
+    width: usize,
+) -> Result<LinearCombination<F::Element>> {
     let count = reader.u32()? as usize;
-    if count.saturating_mul(8) > reader.bytes.len() {
+    if count.saturating_mul(4 + width) > reader.bytes.len() {
         return Err(WitnessError::Format("term count exceeds file size".into()));
     }
     let mut terms = Vec::with_capacity(count);
     for _ in 0..count {
         let wire = reader.u32()?;
-        let coef = u64::from(reader.u32()?);
-        if wire >= n_wires || coef >= P {
+        let coef = F::from_le(reader.take(width)?);
+        let (true, Some(coef)) = (wire < n_wires, coef) else {
             return Err(WitnessError::Format("term out of range".into()));
-        }
+        };
         terms.push(Term { wire, coef });
     }
-    Ok(normalize(terms))
+    Ok(normalize::<F>(terms))
 }
 
 struct Header {
@@ -109,14 +115,13 @@ struct Header {
     n_constraints: u32,
 }
 
-fn read_header(section: &[u8]) -> Result<Header> {
+fn read_header<F: Field>(section: &[u8]) -> Result<Header> {
     let mut r = Reader { bytes: section };
     let field_bytes = r.u32()?;
-    let prime = r.take(field_bytes as usize)?;
-    if field_bytes != FIELD_BYTES
-        || u64::from(u32::from_le_bytes(prime.try_into().expect("4"))) != P
-    {
-        return Err(WitnessError::Format("r1cs is not over KoalaBear".into()));
+    if r.take(field_bytes as usize)? != F::modulus_le() {
+        return Err(WitnessError::Format(
+            "r1cs is over a different prime field".into(),
+        ));
     }
     let n_wires = r.u32()?;
     let (n_pub_out, n_pub_in, n_prv_in) = (r.u32()?, r.u32()?, r.u32()?);
@@ -135,8 +140,12 @@ fn read_header(section: &[u8]) -> Result<Header> {
     })
 }
 
-fn read_constraints(section: &[u8], header: &Header) -> Result<Vec<Constraint>> {
+fn read_constraints<F: Field>(
+    section: &[u8],
+    header: &Header,
+) -> Result<Vec<Constraint<F::Element>>> {
     let mut r = Reader { bytes: section };
+    let width = F::modulus_le().len();
     let count = header.n_constraints as usize;
     if count.saturating_mul(12) > section.len() {
         return Err(WitnessError::Format("constraint count exceeds file".into()));
@@ -144,9 +153,9 @@ fn read_constraints(section: &[u8], header: &Header) -> Result<Vec<Constraint>> 
     let mut out = Vec::with_capacity(count);
     for _ in 0..count {
         out.push(Constraint {
-            a: read_lc(&mut r, header.n_wires)?,
-            b: read_lc(&mut r, header.n_wires)?,
-            c: read_lc(&mut r, header.n_wires)?,
+            a: read_lc::<F>(&mut r, header.n_wires, width)?,
+            b: read_lc::<F>(&mut r, header.n_wires, width)?,
+            c: read_lc::<F>(&mut r, header.n_wires, width)?,
         });
     }
     Ok(out)
@@ -167,7 +176,7 @@ fn split_sections(bytes: &[u8]) -> Result<BTreeMap<u32, &[u8]>> {
     Ok(sections)
 }
 
-pub fn parse(bytes: &[u8]) -> Result<R1cs> {
+pub fn parse<F: Field>(bytes: &[u8]) -> Result<R1cs<F::Element>> {
     let sections = split_sections(bytes)?;
     let section = |kind: u32| {
         sections
@@ -175,8 +184,8 @@ pub fn parse(bytes: &[u8]) -> Result<R1cs> {
             .copied()
             .ok_or_else(|| WitnessError::Format(format!("missing r1cs section {kind}")))
     };
-    let header = read_header(section(SECTION_HEADER)?)?;
-    let constraints = read_constraints(section(SECTION_CONSTRAINTS)?, &header)?;
+    let header = read_header::<F>(section(SECTION_HEADER)?)?;
+    let constraints = read_constraints::<F>(section(SECTION_CONSTRAINTS)?, &header)?;
     Ok(R1cs {
         n_wires: header.n_wires,
         n_pub_out: header.n_pub_out,
@@ -189,22 +198,27 @@ pub fn parse(bytes: &[u8]) -> Result<R1cs> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::field::{KoalaBear, P};
 
     const AGE_OVER: &[u8] = include_bytes!("../../../testdata/age_over/age_over.r1cs");
 
     #[test]
     fn parses_reference_circuit() {
-        let r1cs = parse(AGE_OVER).unwrap();
+        let r1cs = parse::<KoalaBear>(AGE_OVER).unwrap();
         assert_eq!(r1cs.n_wires, 30);
         assert_eq!((r1cs.n_pub_out, r1cs.n_pub_in, r1cs.n_prv_in), (1, 1, 1));
         assert_eq!(r1cs.input_wires(), 2..4);
+        assert_eq!(r1cs.n_public(), 2);
         assert!(!r1cs.constraints.is_empty());
     }
 
     #[test]
     fn rejects_truncated_and_foreign_files() {
         for cut in [0, 3, 11, 40, AGE_OVER.len() - 1] {
-            assert!(parse(&AGE_OVER[..cut]).is_err(), "cut at {cut}");
+            assert!(
+                parse::<KoalaBear>(&AGE_OVER[..cut]).is_err(),
+                "cut at {cut}"
+            );
         }
         let mut other_prime = AGE_OVER.to_vec();
         let at = other_prime
@@ -212,12 +226,12 @@ mod tests {
             .position(|w| w == [4, 0, 0, 0, 1, 0, 0, 0x7f])
             .expect("header prime present");
         other_prime[at + 4] ^= 1;
-        assert!(parse(&other_prime).is_err());
+        assert!(parse::<KoalaBear>(&other_prime).is_err());
     }
 
     #[test]
     fn normalize_merges_and_drops_zero() {
-        let lc = normalize(vec![
+        let lc = normalize::<KoalaBear>(vec![
             Term { wire: 2, coef: 5 },
             Term { wire: 1, coef: 3 },
             Term {

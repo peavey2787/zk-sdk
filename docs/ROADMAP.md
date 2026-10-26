@@ -23,6 +23,9 @@ Keep the facade at six operations. Mark a milestone done only when its acceptanc
 - [x] Private state transitions (rule vocabulary lowered to conjunctions; chaining by commitment identity): Rust, CLI, WASM, browser, interop.
 - [x] Private proximity/distance (committed 2D point vs public centre and radius, exact squares, all six types): Rust, browser, native/WASM interop, differential-tested.
 
+- [x] Groth16 backend, first slice: `zk-groth16` (Groth16 on arkworks curves against snarkjs zkeys), BN254 builds of open/compare/range/compare_committed at 32/64/128 bits, public Hermez phase 1 plus a documented phase 2 (`docs/GROTH16_SETUP.md`), benchmark.
+- [ ] Groth16 integration: scheme-tagged commitments and proofs in `Predicates`, CLI and WASM; remaining families on BN254; more phase-2 contributors; optional Rapidsnark.
+
 ## Next predicate families (in order; reuse the shared gadgets in `circuits/lib`)
 
 
@@ -38,6 +41,5 @@ Keep the facade at six operations. Mark a milestone done only when its acceptanc
 - [ ] Sweep the security range on the other circuits and add reference-witness differential tests for them.
 - [x] Multi-threaded browser proving (`web/pkg-threads`, cross-origin-isolated pages) and native AVX2 auto-dispatch.
 - [ ] WASM SIMD: Plonky3 has no wasm32 packed field, so browser arithmetic stays scalar (upstream work).
-- [ ] Groth16 (BN254, ark-groth16) backend for the same predicate statements: public Hermez Powers of Tau plus a documented per-circuit phase-2 contribution.
 - [ ] Replace `bincode` 1.x when upstream moves, then drop the audit ignores.
 - [ ] Spark matrix-closing mode (only DirectSparse is wired up).

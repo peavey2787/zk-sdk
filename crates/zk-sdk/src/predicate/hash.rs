@@ -1,5 +1,5 @@
 //! The Poseidon2 hashes of the predicate library: the capacity-tagged sponge behind commitments and
-//! Merkle leaves, and the two-to-one node compression. `circuits/lib/sponge.circom` computes
+//! Merkle leaves, and the two-to-one node compression. `circuits/lib/koalabear/sponge.circom` computes
 //! exactly these; `tests/commitment_circuit.rs` and `tests/sets.rs` prove the two agree.
 
 use std::sync::OnceLock;

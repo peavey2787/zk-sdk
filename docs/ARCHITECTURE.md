@@ -39,3 +39,5 @@
 ## Backend swapping
 
 Implement `zk_core::Backend`. Proof artifacts record their backend id and version and are only accepted by a matching implementation.
+
+`zk-witness` is generic over a `Field` trait (KoalaBear built in), so the same solver serves other fields. `zk-groth16` implements it for BN254 and proves the BN254 predicate builds against snarkjs zkeys with its own Groth16 prover and verifier on arkworks curves (`qap.rs` reproduces snarkjs's extra public-input rows and odd-coset quotient; the matrices come from the r1cs). ark-groth16 is not used because its dependency tree fails `cargo audit`; the zkey header is cross-checked against the r1cs and every bundled artifact against its recorded SHA-256. It is not yet behind `zk_core::Backend` or the `Predicates` facade (see ROADMAP).

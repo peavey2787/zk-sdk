@@ -101,7 +101,7 @@ impl Zk {
         let witness = calculator
             .witness(inputs)
             .map_err(|e| ZkError::Backend(e.to_string()))?;
-        PrivateInputs::from_wtns_bytes(witness.wtns)
+        PrivateInputs::from_wtns_bytes(witness.wtns())
     }
 }
 

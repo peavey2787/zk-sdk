@@ -1,6 +1,6 @@
 pragma circom 2.2.0;
-include "../lib/commit.circom";
-include "../lib/merkle.circom";
+include "../lib/opens.circom";
+include "merkle.circom";
 include "../lib/limbs.circom";
 
 // An issuer-backed credential. The issuer publishes the root of a Merkle tree whose leaf for each
