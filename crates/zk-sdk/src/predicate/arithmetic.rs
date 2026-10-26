@@ -3,10 +3,13 @@
 //! operands in a product, so the circuit is chosen deterministically from the claim's shape.
 
 use super::claim::{Op, Operand};
-use super::commit::Commitment;
+use super::commit::{Commitment, DIGEST_ELEMENTS};
 use super::int::{IntType, Number};
-use super::statement::{array, common_type, digest, scalar, signed, Field, Slot, Statement};
+use super::statement::{
+    array, common_type, digest, elements, scalar, signed, Field, Slot, Statement,
+};
 use crate::{Result, ZkError};
+use zk_groth16::Fr;
 
 /// The most committed terms one sum can combine (the larger `sum8` circuit).
 pub const MAX_TERMS: usize = 8;
@@ -74,14 +77,11 @@ pub(super) fn sum(
         amount(ty, "minus constant", minus_constant)?,
         plus.len(),
     );
-    let mut commitments: Vec<u64> = terms
-        .iter()
-        .flat_map(|c| c.digest().map(u64::from))
-        .collect();
-    commitments.resize(capacity * 8, 0);
+    let mut commitments: Vec<Fr> = terms.iter().flat_map(Commitment::signals).collect();
+    commitments.resize(capacity * DIGEST_ELEMENTS, Fr::from(0u8));
     let [lt, eq, gt] = op.flags();
     let fields = vec![
-        array("commitment", commitments),
+        elements("commitment", commitments),
         signed(ty),
         array("plus", flags(0, plus.len(), capacity)),
         array("minus", flags(plus.len(), minus.len(), capacity)),
@@ -249,7 +249,7 @@ mod tests {
         let inputs = statement.public_inputs();
         let tail = &inputs[inputs.len() - 3 - 6..inputs.len() - 3];
         // plus_total = 5 + 1 * 2^31, minus_total = 7 + 2 * 2^31 = 2^32 + 7 (three limbs each).
-        assert_eq!(tail, &[5, 0x8000, 0, 7, 0, 1]);
+        assert_eq!(tail, &[5, 0x8000, 0, 7, 0, 1].map(Fr::from));
         assert!(Predicate::sum(vec![c], -1, Op::Eq, vec![c], 0)
             .statement()
             .is_err());

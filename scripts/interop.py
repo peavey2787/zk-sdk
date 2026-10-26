@@ -47,11 +47,12 @@ class Backend:
             run(["node", TOOL, NODE_PKG, "verify", vk, expected, proof], expect_ok=ok)
 
 
-    def commit(self, ty, value, commitment, secret):
+    def commit(self, scheme, ty, value, commitment, secret):
         if self.name == "native":
-            run([CLI, "predicate", "commit", "--type", ty, "--value", value, "--commitment", commitment, "--secret", secret])
+            run([CLI, "predicate", "commit", "--scheme", scheme, "--type", ty, "--value", value, "--commitment", commitment,
+                 "--secret", secret])
         else:
-            run(["node", TOOL, NODE_PKG, "predicate-commit", ty, value, commitment, secret])
+            run(["node", TOOL, NODE_PKG, "predicate-commit", scheme, ty, value, commitment, secret])
 
     def set_commitment(self, ty, values, commitment):
         if self.name == "native":
@@ -116,10 +117,13 @@ def corrupt(source, target):
 def predicate_claims(c):
     """name -> (claim json, altered claim json, commitment names to open). Each altered claim is a
     different, even if true, statement: a proof must never verify against it."""
-    ge = lambda bound: f'{{"kind":"compare","commitment":"{c["age"]}","op":"ge","bound":"{bound}"}}'
-    rng = lambda lo: f'{{"kind":"range","commitment":"{c["wide"]}","lo":"{lo}","hi":"5","lo_inclusive":true,"hi_inclusive":false}}'
-    pair = lambda op: f'{{"kind":"compare_committed","left":"{c["low"]}","right":"{c["high"]}","op":"{op}"}}'
+    ge = lambda bound, p="": f'{{"kind":"compare","commitment":"{c[p + "age"]}","op":"ge","bound":"{bound}"}}'
+    rng = lambda lo, p="": (
+        f'{{"kind":"range","commitment":"{c[p + "wide"]}","lo":"{lo}","hi":"5","lo_inclusive":true,"hi_inclusive":false}}'
+    )
+    pair = lambda op, p="": f'{{"kind":"compare_committed","left":"{c[p + "low"]}","right":"{c[p + "high"]}","op":"{op}"}}'
     opens = lambda name: f'{{"kind":"opens","commitment":"{c[name]}"}}'
+    g16_all = lambda bound: f'{{"kind":"all","claims":[{ge(bound, "g_")},{pair("lt", "g_")}]}}'
     conserve = lambda fee: (
         f'{{"kind":"sum","plus":["{c["in1"]}","{c["in2"]}"],"minus":["{c["out1"]}","{c["out2"]}"],'
         f'"plus_constant":"0","minus_constant":"{fee}","op":"eq"}}'
@@ -155,6 +159,11 @@ def predicate_claims(c):
         "union_u64": (union(350), union(351), ["in2"]),
         "all_u64": (both(100), both(101), ["in2", "out2"]),
         "distance_u64": (distance(305), distance(300), ["in2", "out2"]),
+        "groth16_opens": (opens("g_age"), opens("g_low"), ["g_age"]),
+        "groth16_ge_u32": (ge(18, "g_"), ge(19, "g_"), ["g_age"]),
+        "groth16_range_i128": (rng(-9, "g_"), rng(-8, "g_"), ["g_wide"]),
+        "groth16_pair_i64": (pair("lt", "g_"), pair("gt", "g_"), ["g_low", "g_high"]),
+        "groth16_all": (g16_all(18), g16_all(19), ["g_age", "g_low", "g_high"]),
     }
 
 
@@ -164,11 +173,12 @@ def predicate_matrix(backends, tmp):
     specs = {"age": ("u32", "20"), "wide": ("i128", "-7"), "low": ("i64", "-3"), "high": ("i64", "9"),
              "in1": ("u64", "700"), "in2": ("u64", "300"), "out1": ("u64", "960"), "out2": ("u64", "30"),
              "rem_dividend": ("u64", "47"), "quotient": ("u64", "5"), "remainder": ("u64", "2")}
+    groth16 = {f"g_{name}": spec for name, spec in specs.items() if name in ("age", "wide", "low", "high")}
     commitments, secrets = {}, {}
-    for name, (ty, value) in specs.items():
+    for name, (ty, value) in {**specs, **groth16}.items():
         maker = next(makers)
         commitment, secret = tmp / f"{name}.c", tmp / f"{name}.s"
-        maker.commit(ty, value, commitment, secret)
+        maker.commit("groth16" if name in groth16 else "spartan-whir", ty, value, commitment, secret)
         commitments[name], secrets[name] = commitment.read_text(), secret
     set_values = tmp / "set.json"
     set_values.write_text('["300","301","900"]')

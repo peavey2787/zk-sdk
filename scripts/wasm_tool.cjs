@@ -23,8 +23,8 @@ const commands = {
     zk.verify(read(vk), Uint32Array.from(expected.split(",").map(Number)), read(proof));
   },
   // Built-in predicates, mirroring `zk predicate ...` (same files, same claim JSON).
-  "predicate-commit": ([type, value, commitment, secret]) => {
-    const made = JSON.parse(zk.predicate_commit(type, value));
+  "predicate-commit": ([scheme, type, value, commitment, secret]) => {
+    const made = JSON.parse(zk.predicate_commit(scheme, type, value));
     fs.writeFileSync(commitment, made.commitment);
     fs.writeFileSync(secret, made.secret);
   },

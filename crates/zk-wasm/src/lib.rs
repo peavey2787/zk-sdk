@@ -109,10 +109,13 @@ pub fn predicate_set_minimum_bits(bits: u16) {
     });
 }
 
-/// A fresh commitment as JSON `{"commitment","secret"}`: publish the first, keep the second.
+/// A fresh commitment for `scheme` (`spartan-whir` or `groth16`) as JSON `{"commitment","secret"}`:
+/// publish the first, keep the second.
 #[wasm_bindgen]
-pub fn predicate_commit(int_type: &str, value: &str) -> Result<String, JsError> {
-    Ok(predicate::commit(int_type, value).map_err(js)?.to_json())
+pub fn predicate_commit(scheme: &str, int_type: &str, value: &str) -> Result<String, JsError> {
+    Ok(predicate::commit(scheme, int_type, value)
+        .map_err(js)?
+        .to_json())
 }
 
 /// The public commitment of the set of decimal strings in the JSON array `values_json`.

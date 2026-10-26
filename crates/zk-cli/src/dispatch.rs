@@ -14,14 +14,26 @@ const OPTIMIZED: &str = if cfg!(windows) {
     "zk-avx2"
 };
 
-/// The optimized sibling to run instead of this process, if any.
+/// The optimized sibling to run instead of this process, if any. A sibling older than this
+/// executable was built from older sources (the portable build was redone since), so it is skipped
+/// with a warning rather than run in this binary's place.
 pub fn optimized_sibling() -> Option<PathBuf> {
     if cfg!(target_feature = "avx2") || std::env::var_os("ZK_PORTABLE").is_some() || !cpu_has_avx2()
     {
         return None;
     }
-    let sibling = std::env::current_exe().ok()?.with_file_name(OPTIMIZED);
-    sibling.is_file().then_some(sibling)
+    let current = std::env::current_exe().ok()?;
+    let sibling = current.with_file_name(OPTIMIZED);
+    let built = |path: &PathBuf| path.metadata().and_then(|m| m.modified()).ok();
+    let (sibling_built, current_built) = (built(&sibling)?, built(&current)?);
+    if sibling_built < current_built {
+        eprintln!(
+            "warning: {} is older than this zk; run scripts/build_optimized.py (using the portable build)",
+            sibling.display()
+        );
+        return None;
+    }
+    Some(sibling)
 }
 
 #[cfg(target_arch = "x86_64")]

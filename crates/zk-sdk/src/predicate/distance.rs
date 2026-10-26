@@ -65,7 +65,7 @@ mod tests {
         // 8 + 8 digest words, signed, two centres (2 limbs each), three flags, then radius^2.
         let radius_sq = &inputs[inputs.len() - 4..];
         // (2^32 - 1)^2 = 2^64 - 2^33 + 1
-        assert_eq!(radius_sq, &[1, 0, 0xFFFE, 0xFFFF]);
+        assert_eq!(radius_sq, &[1, 0, 0xFFFE, 0xFFFF].map(zk_groth16::Fr::from));
     }
 
     #[test]

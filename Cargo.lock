@@ -1441,6 +1441,7 @@ dependencies = [
  "tempfile",
  "zeroize",
  "zk-core",
+ "zk-groth16",
  "zk-spartan-whir",
  "zk-witness",
 ]

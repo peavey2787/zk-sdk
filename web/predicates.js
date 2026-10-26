@@ -95,7 +95,7 @@ async function commit() {
   const made = [];
   let total = 0;
   for (const value of values) {
-    const { result, ms } = await runner.run("predicateCommit", { type: $("type").value, value });
+    const { result, ms } = await runner.run("predicateCommit", { scheme: $("scheme").value, type: $("type").value, value });
     made.push(JSON.parse(result));
     total += ms;
   }

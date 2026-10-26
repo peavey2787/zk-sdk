@@ -1,21 +1,29 @@
 //! The predicate facade: `prove(&claim, witness)` and `verify(&claim, &proof)` with no compile or
 //! setup step for the developer. Approved circuits are loaded and keyed on first use per circuit
-//! and cached, then proved by the same backend and policy as the advanced six-operation facade.
+//! and cached, then proved by the same backend and policy as the advanced six-operation facade, or by
+//! Groth16 when the claim's commitments were made for it.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use zeroize::Zeroize;
+use zk_groth16::{Bn254, FieldInputs, Fr};
+use zk_witness::Field as _;
 
 use super::bundle;
 use super::claim::Predicate;
-use super::commit::Opening;
+use super::commit::{Opening, DIGEST_ELEMENTS};
+use super::groth16::Groth16Circuits;
+use super::scheme::Scheme;
 use super::set::SetPath;
 use super::statement::Statement;
 use crate::{
     decode_artifact, encode_artifact, CompiledCircuit, Inputs, KeyPair, Proof, Result,
     SecurityPolicy, WitnessCalculator, Zk, ZkError,
 };
+
+/// Every circuit input by signal name, as field elements.
+pub(super) type Signals = FieldInputs<Bn254>;
 
 /// The openings the prover holds, in the order of the claim's commitments.
 pub struct Witness {
@@ -93,6 +101,7 @@ pub struct Predicates {
     policy: SecurityPolicy,
     floor: u16,
     entries: Mutex<HashMap<String, Arc<Entry>>>,
+    groth16: Groth16Circuits,
 }
 
 impl Default for Predicates {
@@ -115,6 +124,7 @@ impl Predicates {
             policy,
             floor: policy.bits,
             entries: Mutex::default(),
+            groth16: Groth16Circuits::default(),
         }
     }
 
@@ -131,7 +141,7 @@ impl Predicates {
         self.floor
     }
 
-    /// The target security level in bits that `circuit` is actually set up at: the policy's, or
+    /// The target security level in bits that Spartan-WHIR circuit `circuit` is actually set up at: the policy's, or
     /// the most upstream attains for that circuit's size when the caller authorized that lower
     /// level. Soundness of the composed proof system remains unverified end to end.
     pub fn security_bits(&self, circuit: &str) -> Result<u16> {
@@ -179,28 +189,68 @@ impl Predicates {
     pub fn prove(&self, claim: &Predicate, witness: impl Into<Witness>) -> Result<PredicateProof> {
         let statement = claim.statement()?;
         let witness = witness.into();
-        let mut inputs = inputs(&statement, claim, &witness)?;
-        let proof = self.entry(statement.circuit()).and_then(|entry| {
+        let mut signals = inputs(&statement, claim, &witness)?;
+        let proof = match statement.scheme() {
+            Scheme::SpartanWhir => self.prove_spartan(statement.circuit(), &signals),
+            Scheme::Groth16 => {
+                self.groth16
+                    .prove(statement.circuit(), &signals, &statement.public_inputs())
+            }
+        };
+        signals.values_mut().for_each(Zeroize::zeroize);
+        Ok(PredicateProof(proof?))
+    }
+
+    fn prove_spartan(&self, circuit: &str, signals: &Signals) -> Result<Vec<u8>> {
+        let mut inputs = koalabear_inputs(signals)?;
+        let proof = self.entry(circuit).and_then(|entry| {
             let private = entry.zk.witness(&entry.calculator, &inputs)?;
             let output = entry.zk.prove(&entry.keys.proving, &private)?;
             encode_artifact(&output.proof)
         });
         inputs.values_mut().for_each(Zeroize::zeroize);
-        Ok(PredicateProof(proof?))
+        proof
     }
 
     /// Verify `proof` against `claim`, the statement the caller trusts. Any failure is an error.
     pub fn verify(&self, claim: &Predicate, proof: &PredicateProof) -> Result<()> {
         let statement = claim.statement()?;
-        let entry = self.entry(statement.circuit())?;
-        let proof: Proof = decode_artifact(&proof.0)?;
-        let expected = entry.zk.encode_public_inputs(&statement.public_inputs())?;
-        entry.zk.verify(&entry.keys.verifying, &expected, &proof)
+        let public = statement.public_inputs();
+        match statement.scheme() {
+            Scheme::SpartanWhir => {
+                let entry = self.entry(statement.circuit())?;
+                let proof: Proof = decode_artifact(&proof.0)?;
+                let expected = entry.zk.encode_public_inputs(&koalabear(&public)?)?;
+                entry.zk.verify(&entry.keys.verifying, &expected, &proof)
+            }
+            Scheme::Groth16 => self.groth16.verify(statement.circuit(), &public, &proof.0),
+        }
     }
 }
 
+/// Field elements as KoalaBear inputs; every Spartan-WHIR signal is below 2^31.
+fn koalabear(values: &[Fr]) -> Result<Vec<u64>> {
+    values
+        .iter()
+        .map(|v| {
+            Bn254::to_u128(*v)
+                .and_then(|v| u64::try_from(v).ok())
+                .ok_or_else(|| ZkError::Predicate("signal does not fit KoalaBear".into()))
+        })
+        .collect()
+}
+
+/// The Spartan-WHIR witness inputs for `signals`.
+pub(super) fn koalabear_inputs(signals: &Signals) -> Result<Inputs> {
+    let mut inputs = Inputs::new();
+    for (name, value) in signals {
+        inputs.insert(name.clone(), koalabear(&[*value])?[0]);
+    }
+    Ok(inputs)
+}
+
 /// Public inputs plus the private `limb`/`blinding` signals, after checking each opening matches.
-fn inputs(statement: &Statement, claim: &Predicate, witness: &Witness) -> Result<Inputs> {
+fn inputs(statement: &Statement, claim: &Predicate, witness: &Witness) -> Result<Signals> {
     let openings = &witness.openings;
     let expected = statement.committed();
     if openings.len() != expected.len() {
@@ -232,8 +282,8 @@ pub(super) fn assignment(
     statement: &Statement,
     openings: &[Opening],
     path: Option<&SetPath>,
-) -> Result<Inputs> {
-    let mut inputs = Inputs::new();
+) -> Result<Signals> {
+    let mut inputs = Signals::new();
     for field in statement.named() {
         if field.array {
             put_array(&mut inputs, field.name, &field.values);
@@ -246,10 +296,14 @@ pub(super) fn assignment(
         let (mut limb, mut blinding) = match slot.source {
             Some(source) => (
                 openings[source].ty().limbs(openings[source].encoded()?),
-                openings[source].blinding().map(u64::from),
+                openings[source].blinding_signals(),
             ),
-            None => (vec![0; limbs], [0; 8]),
+            None => (
+                vec![0; limbs],
+                vec![Fr::from(0u8); unused_blinding(statement)],
+            ),
         };
+        let mut limb: Vec<Fr> = limb.drain(..).map(Fr::from).collect();
         put_array(&mut inputs, &slot.limb, &limb);
         put_array(&mut inputs, &slot.blinding, &blinding);
         limb.zeroize();
@@ -260,13 +314,21 @@ pub(super) fn assignment(
             ZkError::Predicate("this claim needs a set path in the witness".into())
         })?;
         for (name, value) in path.circuit_inputs(statement.ty(), shape.absent, shape.depth)? {
-            inputs.insert(name, value);
+            inputs.insert(name, Fr::from(value));
         }
     }
     Ok(inputs)
 }
 
-fn put_array(inputs: &mut Inputs, name: &str, values: &[u64]) {
+/// The blinding width of an unused slot: unused slots exist only in Spartan-WHIR circuits.
+fn unused_blinding(statement: &Statement) -> usize {
+    match statement.scheme() {
+        Scheme::SpartanWhir => DIGEST_ELEMENTS,
+        Scheme::Groth16 => 1,
+    }
+}
+
+fn put_array(inputs: &mut Signals, name: &str, values: &[Fr]) {
     for (i, value) in values.iter().enumerate() {
         inputs.insert(format!("{name}[{i}]"), *value);
     }

@@ -10,6 +10,7 @@ use crate::args::Flags;
 use crate::io::{read, read_text, sdk, timed, write};
 
 pub const USAGE: &str = "  zk predicate commit   --type u32|i32|u64|i64|u128|i128 --value N --commitment F --secret F
+                        [--scheme spartan-whir|groth16]
   zk predicate set      --type T --values F.json --commitment F
   zk predicate path     --type T --values F.json --value N --proves member|absent --path F
   zk predicate transition --spec F.json --claim F.json --open F.json
@@ -18,6 +19,9 @@ pub const USAGE: &str = "  zk predicate commit   --type u32|i32|u64|i64|u128|i12
   zk predicate describe --claim F.json [--min-bits N]
   zk predicate prove    --claim F.json --secrets F[,F...] --proof F [--min-bits N]
   zk predicate verify   --claim F.json --proof F [--min-bits N]
+--scheme: the proof system the commitment is made for (default spartan-whir: transparent and
+  post-quantum); groth16 gives 128-byte proofs but needs a trusted setup, is not post-quantum and
+  covers opens/compare/range/compare_committed (and their conjunctions) only; see docs/GROTH16_SETUP.md
 --min-bits: authorize circuits that cannot reach the 116-bit default to run at the highest level
   they attain, but never below N (the larger arithmetic circuits attain 115); without it they fail
 secrets: one file per committed value, in claim order (comma separated); a member/absent claim
@@ -31,7 +35,9 @@ claim: {\"kind\":\"opens\"|\"compare\"|\"range\"|\"compare_committed\"|\"sum\"|\
 see docs/PREDICATES.md";
 
 fn commit(flags: &Flags) -> Result<(), String> {
-    let made = predicate::commit(flags.required("type")?, flags.required("value")?).map_err(sdk)?;
+    let scheme = flags.optional("scheme").unwrap_or("spartan-whir");
+    let made = predicate::commit(scheme, flags.required("type")?, flags.required("value")?)
+        .map_err(sdk)?;
     write(flags, "commitment", made.commitment.as_bytes())?;
     write(flags, "secret", made.secret.as_bytes())?;
     println!("{}", made.commitment);
@@ -147,7 +153,13 @@ pub fn run(args: &[String]) -> Result<(), String> {
     };
     let flags = |allowed: &[&str]| Flags::parse(rest, allowed);
     match command.as_str() {
-        "commit" => commit(&flags(&["type", "value", "commitment", "secret"])?),
+        "commit" => commit(&flags(&[
+            "type",
+            "value",
+            "commitment",
+            "secret",
+            "scheme",
+        ])?),
         "set" => set(&flags(&["type", "values", "commitment"])?),
         "path" => path(&flags(&["type", "values", "value", "proves", "path"])?),
         "transition" => transition(&flags(&["spec", "claim", "open"])?),

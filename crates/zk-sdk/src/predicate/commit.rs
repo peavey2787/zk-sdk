@@ -1,38 +1,72 @@
 //! Value commitments: the public handle a predicate is about, and the private opening that proves it.
 //!
-//! `digest = Poseidon2-sponge([signed, limb count, limbs.., blinding..])` over KoalaBear with
-//! Plonky3's width-16 permutation, rate 8, capacity `[DOMAIN, message length, 0..]`. The circuits in
-//! `circuits/lib/koalabear/commit.circom` compute exactly this; `tests/commitment_circuit.rs` proves the two
-//! agree. Commitments are binding up to the sponge's collision resistance (about 2^124 over eight
-//! 31-bit elements) and hiding while the blinding stays secret and uniformly random.
+//! Each commitment belongs to one [`Scheme`]:
+//!
+//! - Spartan-WHIR: `digest = Poseidon2-sponge([signed, limb count, limbs.., blinding..])` over
+//!   KoalaBear with Plonky3's width-16 permutation, rate 8, capacity `[DOMAIN, message length, 0..]`
+//!   (`circuits/lib/koalabear/commit.circom`; `tests/commitment_circuit.rs` proves the two agree).
+//!   Binding up to the sponge's collision resistance (about 2^124 over eight 31-bit elements).
+//! - Groth16: `digest = Poseidon5(DOMAIN, signed, limb count, packed value, blinding)` over BN254
+//!   (`circuits/lib/bn254/commit.circom`, computed by `zk_groth16::commit`). Binding up to Poseidon's
+//!   collision resistance over BN254 (about 2^127).
+//!
+//! Both hide the value while the blinding stays secret and uniformly random.
 
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
+use zk_groth16::{Bn254, Fr};
+use zk_witness::Field as _;
 
 pub use super::hash::DIGEST_ELEMENTS;
 pub(super) use super::hash::FIELD_MODULUS;
-use super::hash::{sponge, Digest, COMMIT_DOMAIN};
+use super::hash::{sponge, COMMIT_DOMAIN};
 use super::int::{IntType, Number};
+use super::scheme::Scheme;
 use crate::{Result, ZkError};
 
 pub const BLINDING_ELEMENTS: usize = 8;
 
-type Blinding = [u32; BLINDING_ELEMENTS];
+type KoalaBlinding = [u32; BLINDING_ELEMENTS];
 
-fn message(ty: IntType, encoded: u128, blinding: &Blinding) -> Vec<u32> {
-    let limbs = ty.limbs(encoded);
-    let mut message = vec![u32::from(ty.signed), limbs.len() as u32];
-    message.extend(limbs.iter().map(|l| *l as u32));
-    message.extend_from_slice(blinding);
-    message
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum Digest {
+    KoalaBear(super::hash::Digest),
+    Bn254(Fr),
+}
+
+#[derive(Clone, PartialEq, Eq)]
+enum Blinding {
+    KoalaBear(KoalaBlinding),
+    Bn254(Fr),
+}
+
+impl Zeroize for Blinding {
+    fn zeroize(&mut self) {
+        match self {
+            Self::KoalaBear(elements) => elements.zeroize(),
+            Self::Bn254(scalar) => scalar.zeroize(),
+        }
+    }
 }
 
 fn digest(ty: IntType, encoded: u128, blinding: &Blinding) -> Digest {
-    sponge(COMMIT_DOMAIN, &message(ty, encoded, blinding))
+    let limbs = ty.limbs(encoded);
+    match blinding {
+        Blinding::KoalaBear(blinding) => {
+            let mut message = vec![u32::from(ty.signed), limbs.len() as u32];
+            message.extend(limbs.iter().map(|l| *l as u32));
+            message.extend_from_slice(blinding);
+            Digest::KoalaBear(sponge(COMMIT_DOMAIN, &message))
+        }
+        Blinding::Bn254(blinding) => {
+            let limbs: Vec<u16> = limbs.iter().map(|l| *l as u16).collect();
+            Digest::Bn254(zk_groth16::commit(ty.signed, &limbs, *blinding))
+        }
+    }
 }
 
-/// Uniform field elements by rejection sampling over the OS (or browser) CSPRNG.
-fn random_blinding() -> Result<Blinding> {
+/// Uniform KoalaBear elements by rejection sampling over the OS (or browser) CSPRNG.
+fn random_koalabear() -> Result<KoalaBlinding> {
     let mut out = [0u32; BLINDING_ELEMENTS];
     let mut filled = 0;
     while filled < out.len() {
@@ -48,8 +82,54 @@ fn random_blinding() -> Result<Blinding> {
     Ok(out)
 }
 
-/// The public commitment to a typed integer. Safe to publish; it carries its type, which the
-/// digest binds, so a commitment cannot be reinterpreted under another width or signedness.
+fn random_blinding(scheme: Scheme) -> Result<Blinding> {
+    match scheme {
+        Scheme::SpartanWhir => random_koalabear().map(Blinding::KoalaBear),
+        Scheme::Groth16 => zk_groth16::random_scalar()
+            .map(Blinding::Bn254)
+            .map_err(|e| ZkError::Unavailable(e.to_string())),
+    }
+}
+
+/// A BN254 scalar as 64 big-endian hex digits.
+fn scalar_hex(scalar: Fr) -> String {
+    Bn254::to_le(scalar)
+        .iter()
+        .rev()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+/// The canonical scalar spelled by 64 hex digits, if any.
+fn scalar_from_hex(hex: &str) -> Option<Fr> {
+    if hex.len() != 64 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    let mut bytes = (0..32)
+        .map(|i| u8::from_str_radix(&hex[2 * i..2 * i + 2], 16).ok())
+        .collect::<Option<Vec<u8>>>()?;
+    bytes.reverse();
+    Bn254::from_le(&bytes)
+}
+
+fn koalabear_digest(hex: &str) -> Option<super::hash::Digest> {
+    if hex.len() != DIGEST_ELEMENTS * 8 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    let mut digest = [0u32; DIGEST_ELEMENTS];
+    for (slot, chunk) in digest.iter_mut().zip(hex.as_bytes().chunks(8)) {
+        let element = u32::from_str_radix(std::str::from_utf8(chunk).ok()?, 16).ok()?;
+        if element >= FIELD_MODULUS {
+            return None;
+        }
+        *slot = element;
+    }
+    Some(digest)
+}
+
+/// The public commitment to a typed integer. Safe to publish; it carries its type and scheme, which
+/// the digest binds, so a commitment cannot be reinterpreted under another width, signedness or
+/// proof system.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Commitment {
     ty: IntType,
@@ -87,25 +167,37 @@ impl std::fmt::Debug for Opening {
 }
 
 impl Commitment {
-    /// Commit to `value` under a fresh random blinding. Returns the public commitment and the
-    /// private opening the prover needs.
+    /// Commit to `value` for Spartan-WHIR under a fresh random blinding. Returns the public
+    /// commitment and the private opening the prover needs.
     pub fn commit(ty: IntType, value: impl Into<Number>) -> Result<(Self, Opening)> {
-        Self::commit_with_blinding(ty, value, random_blinding()?)
+        Self::commit_in(Scheme::SpartanWhir, ty, value)
     }
 
-    /// Deterministic variant for reproducible tests and vectors. A reused or guessable blinding
-    /// breaks hiding; real callers use [`Commitment::commit`].
+    /// Commit to `value` for `scheme` under a fresh random blinding.
+    pub fn commit_in(
+        scheme: Scheme,
+        ty: IntType,
+        value: impl Into<Number>,
+    ) -> Result<(Self, Opening)> {
+        Self::with_blinding(ty, value.into(), random_blinding(scheme)?)
+    }
+
+    /// Deterministic Spartan-WHIR variant for reproducible tests and vectors. A reused or
+    /// guessable blinding breaks hiding; real callers use [`Commitment::commit`].
     pub fn commit_with_blinding(
         ty: IntType,
         value: impl Into<Number>,
-        blinding: Blinding,
+        blinding: KoalaBlinding,
     ) -> Result<(Self, Opening)> {
-        let value = value.into();
         if blinding.iter().any(|b| *b >= FIELD_MODULUS) {
             return Err(ZkError::Predicate(
                 "blinding element is not a field element".into(),
             ));
         }
+        Self::with_blinding(ty, value.into(), Blinding::KoalaBear(blinding))
+    }
+
+    fn with_blinding(ty: IntType, value: Number, blinding: Blinding) -> Result<(Self, Opening)> {
         let commitment = Self {
             ty,
             digest: digest(ty, ty.encode(value)?, &blinding),
@@ -124,34 +216,50 @@ impl Commitment {
         self.ty
     }
 
-    pub fn digest(&self) -> Digest {
-        self.digest
+    pub fn scheme(&self) -> Scheme {
+        match self.digest {
+            Digest::KoalaBear(_) => Scheme::SpartanWhir,
+            Digest::Bn254(_) => Scheme::Groth16,
+        }
     }
 
-    /// Canonical text form `<type>:<64 hex digits>`, e.g. `u64:00ab..`.
+    /// The digest as circuit signals: eight KoalaBear elements, or one BN254 scalar.
+    pub(super) fn signals(&self) -> Vec<Fr> {
+        match self.digest {
+            Digest::KoalaBear(words) => words.iter().map(|w| Fr::from(*w)).collect(),
+            Digest::Bn254(scalar) => vec![scalar],
+        }
+    }
+
+    /// Canonical text form: `<type>:<64 hex digits>` for Spartan-WHIR (e.g. `u64:00ab..`), and
+    /// `groth16:<type>:<64 hex digits>` for Groth16.
     pub fn to_text(&self) -> String {
-        let hex: String = self.digest.iter().map(|d| format!("{d:08x}")).collect();
-        format!("{}:{hex}", self.ty)
+        match self.digest {
+            Digest::KoalaBear(words) => {
+                let hex: String = words.iter().map(|d| format!("{d:08x}")).collect();
+                format!("{}:{hex}", self.ty)
+            }
+            Digest::Bn254(scalar) => format!("groth16:{}:{}", self.ty, scalar_hex(scalar)),
+        }
     }
 
     pub fn from_text(text: &str) -> Result<Self> {
-        let invalid =
-            || ZkError::Format(format!("`{text}` is not a commitment (type:64 hex digits)"));
-        let (name, hex) = text.split_once(':').ok_or_else(invalid)?;
+        let invalid = || {
+            ZkError::Format(format!(
+                "`{text}` is not a commitment ([groth16:]type:64 hex digits)"
+            ))
+        };
+        let (bn254, rest) = match text.strip_prefix("groth16:") {
+            Some(rest) => (true, rest),
+            None => (false, text),
+        };
+        let (name, hex) = rest.split_once(':').ok_or_else(invalid)?;
         let ty: IntType = name.parse().map_err(|_| invalid())?;
-        if hex.len() != DIGEST_ELEMENTS * 8 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
-            return Err(invalid());
-        }
-        let mut digest = [0u32; DIGEST_ELEMENTS];
-        for (slot, chunk) in digest.iter_mut().zip(hex.as_bytes().chunks(8)) {
-            let element =
-                u32::from_str_radix(std::str::from_utf8(chunk).map_err(|_| invalid())?, 16)
-                    .map_err(|_| invalid())?;
-            if element >= FIELD_MODULUS {
-                return Err(invalid());
-            }
-            *slot = element;
-        }
+        let digest = if bn254 {
+            Digest::Bn254(scalar_from_hex(hex).ok_or_else(invalid)?)
+        } else {
+            Digest::KoalaBear(koalabear_digest(hex).ok_or_else(invalid)?)
+        };
         Ok(Self { ty, digest })
     }
 }
@@ -174,9 +282,53 @@ impl<'de> Deserialize<'de> for Commitment {
     }
 }
 
+/// A secret's blinding as stored: eight KoalaBear elements, or one BN254 scalar in hex.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum BlindingText {
+    Elements(KoalaBlinding),
+    Scalar(String),
+}
+
+impl Zeroize for BlindingText {
+    fn zeroize(&mut self) {
+        match self {
+            Self::Elements(elements) => elements.zeroize(),
+            Self::Scalar(hex) => hex.zeroize(),
+        }
+    }
+}
+
+impl BlindingText {
+    fn parse(&self, scheme: Scheme) -> Result<Blinding> {
+        let invalid = || ZkError::Format(format!("not a {scheme} blinding"));
+        match (scheme, self) {
+            (Scheme::SpartanWhir, Self::Elements(elements)) => {
+                if elements.iter().any(|b| *b >= FIELD_MODULUS) {
+                    return Err(ZkError::Format(
+                        "blinding element is not a field element".into(),
+                    ));
+                }
+                Ok(Blinding::KoalaBear(*elements))
+            }
+            (Scheme::Groth16, Self::Scalar(hex)) => scalar_from_hex(hex)
+                .map(Blinding::Bn254)
+                .ok_or_else(invalid),
+            _ => Err(invalid()),
+        }
+    }
+}
+
 impl Opening {
     pub fn ty(&self) -> IntType {
         self.ty
+    }
+
+    pub fn scheme(&self) -> Scheme {
+        match self.blinding {
+            Blinding::KoalaBear(_) => Scheme::SpartanWhir,
+            Blinding::Bn254(_) => Scheme::Groth16,
+        }
     }
 
     /// Whether this opening really opens `commitment`. The circuits enforce this independently;
@@ -197,17 +349,29 @@ impl Opening {
         self.ty.encode(self.value)
     }
 
-    pub(super) fn blinding(&self) -> &Blinding {
-        &self.blinding
+    /// The blinding as circuit signals: eight KoalaBear elements, or one BN254 scalar.
+    pub(super) fn blinding_signals(&self) -> Vec<Fr> {
+        match &self.blinding {
+            Blinding::KoalaBear(words) => words.iter().map(|w| Fr::from(*w)).collect(),
+            Blinding::Bn254(scalar) => vec![*scalar],
+        }
     }
 
     /// The secret as JSON, for storage or transfer to the prover. Treat it as a private key.
+    /// Spartan-WHIR secrets keep their original shape; Groth16 secrets add `"scheme"`.
     pub fn to_secret_json(&self) -> String {
-        serde_json::json!({
-            "type": self.ty.to_string(),
-            "value": self.value.to_string(),
-            "blinding": self.blinding,
-        })
+        let (ty, value) = (self.ty.to_string(), self.value.to_string());
+        match &self.blinding {
+            Blinding::KoalaBear(words) => {
+                serde_json::json!({ "type": ty, "value": value, "blinding": words })
+            }
+            Blinding::Bn254(scalar) => serde_json::json!({
+                "scheme": Scheme::Groth16.name(),
+                "type": ty,
+                "value": value,
+                "blinding": scalar_hex(*scalar),
+            }),
+        }
         .to_string()
     }
 
@@ -215,9 +379,10 @@ impl Opening {
         #[derive(Deserialize)]
         #[serde(deny_unknown_fields)]
         struct Secret {
+            scheme: Option<String>,
             r#type: String,
             value: String,
-            blinding: Blinding,
+            blinding: BlindingText,
         }
         impl Drop for Secret {
             fn drop(&mut self) {
@@ -227,18 +392,17 @@ impl Opening {
         }
         let secret: Secret =
             serde_json::from_str(text).map_err(|e| ZkError::Format(e.to_string()))?;
+        let scheme = match &secret.scheme {
+            Some(name) => name.parse()?,
+            None => Scheme::SpartanWhir,
+        };
         let ty: IntType = secret.r#type.parse()?;
         let value: Number = secret.value.parse()?;
         ty.encode(value)?;
-        if secret.blinding.iter().any(|b| *b >= FIELD_MODULUS) {
-            return Err(ZkError::Format(
-                "blinding element is not a field element".into(),
-            ));
-        }
         Ok(Self {
             ty,
             value,
-            blinding: secret.blinding,
+            blinding: secret.blinding.parse(scheme)?,
         })
     }
 }
@@ -247,7 +411,7 @@ impl Opening {
 mod tests {
     use super::*;
 
-    const BLIND: Blinding = [1, 2, 3, 4, 5, 6, 7, 8];
+    const BLIND: KoalaBlinding = [1, 2, 3, 4, 5, 6, 7, 8];
 
     #[test]
     fn zeroizing_an_opening_destroys_the_secret() {
@@ -256,7 +420,10 @@ mod tests {
         assert!(opening.opens(&commitment));
         opening.zeroize();
         assert_eq!(opening.value(), Number::default());
-        assert_eq!(opening.blinding(), &[0; BLINDING_ELEMENTS]);
+        assert_eq!(
+            opening.blinding_signals(),
+            vec![Fr::from(0u8); BLINDING_ELEMENTS]
+        );
         assert!(!opening.opens(&commitment));
         assert!(!opening.to_secret_json().contains("18"));
     }
@@ -285,9 +452,11 @@ mod tests {
 
     #[test]
     fn fresh_commitments_hide_equal_values() {
-        let (a, _) = Commitment::commit(IntType::U32, 7u32).unwrap();
-        let (b, _) = Commitment::commit(IntType::U32, 7u32).unwrap();
-        assert_ne!(a, b);
+        for scheme in [Scheme::SpartanWhir, Scheme::Groth16] {
+            let (a, _) = Commitment::commit_in(scheme, IntType::U32, 7u32).unwrap();
+            let (b, _) = Commitment::commit_in(scheme, IntType::U32, 7u32).unwrap();
+            assert_ne!(a, b);
+        }
     }
 
     #[test]
@@ -334,5 +503,29 @@ mod tests {
     #[test]
     fn rejects_non_canonical_blinding() {
         assert!(Commitment::commit_with_blinding(IntType::U32, 1u32, [FIELD_MODULUS; 8]).is_err());
+    }
+
+    #[test]
+    fn groth16_commitments_round_trip_and_never_open_across_schemes() {
+        let (c, opening) = Commitment::commit_in(Scheme::Groth16, IntType::I64, -9i32).unwrap();
+        assert_eq!(
+            (c.scheme(), opening.scheme()),
+            (Scheme::Groth16, Scheme::Groth16)
+        );
+        assert!(c.to_text().starts_with("groth16:i64:"));
+        assert_eq!(Commitment::from_text(&c.to_text()).unwrap(), c);
+        let secret = opening.to_secret_json();
+        let parsed = Opening::from_secret_json(&secret).unwrap();
+        assert_eq!(parsed, opening);
+        assert!(parsed.opens(&c));
+        let (koala, koala_opening) = Commitment::commit(IntType::I64, -9i32).unwrap();
+        assert!(!opening.opens(&koala) && !koala_opening.opens(&c));
+        assert!(Opening::from_secret_json(&secret.replace("groth16", "spartan-whir")).is_err());
+        let modulus = "30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001";
+        assert!(
+            Commitment::from_text(&format!("groth16:u32:{modulus}")).is_err(),
+            "non-canonical scalar"
+        );
+        assert!(Commitment::from_text(&format!("groth16:u32:{}", &modulus[..62])).is_err());
     }
 }

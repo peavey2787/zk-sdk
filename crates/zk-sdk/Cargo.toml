@@ -7,12 +7,13 @@ rust-version.workspace = true
 description = "Six-operation backend-independent zero-knowledge SDK facade (native and wasm32)"
 
 [features]
-parallel = ["zk-spartan-whir/parallel"]
+parallel = ["zk-spartan-whir/parallel", "zk-groth16/parallel"]
 
 [dependencies]
 zk-core = { path = "../zk-core" }
 zk-spartan-whir = { path = "../zk-spartan-whir" }
 zk-witness = { path = "../zk-witness" }
+zk-groth16 = { path = "../zk-groth16" }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

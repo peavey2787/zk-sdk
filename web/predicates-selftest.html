@@ -11,7 +11,7 @@ import { JobRunner } from "./job-runner.js";
 
 const runner = new JobRunner("./worker.js");
 await runner.run("predicateMinimumBits", { bits: 115 }); // explicit: large circuits attain 115
-const commit = async (type, value) => JSON.parse((await runner.run("predicateCommit", { type, value })).result);
+const commit = async (type, value, scheme = "spartan-whir") => JSON.parse((await runner.run("predicateCommit", { scheme, type, value })).result);
 const accepts = (claim, proof) => runner.run("predicateVerify", { claim: JSON.stringify(claim), proof }).then(() => true, () => false);
 const proves = (claim, secrets) => runner.run("predicateProve", { claim: JSON.stringify(claim), secrets }).then((r) => r.result, () => null);
 
@@ -42,6 +42,16 @@ async function main() {
   const pairProof = await proves(pair, [low.secret, high.secret]);
   checks.committed_pair_accepted = pairProof !== null && (await accepts(pair, pairProof));
   checks.committed_pair_rejects_swapped = !(await accepts(buildClaim("compare_committed", { op: "lt" }, [high.commitment, low.commitment]), pairProof));
+
+  // Groth16 commitments: the same claims, proved over BN254 in the browser.
+  const gAge = await commit("u32", "20", "groth16");
+  const gHigh = await commit("i64", "9", "groth16");
+  const gGe = buildClaim("compare", { op: "ge", bound: "18" }, [gAge.commitment]);
+  const gGeProof = await proves(gGe, [gAge.secret]);
+  checks.groth16_compare_accepted = gGeProof !== null && (await accepts(gGe, gGeProof));
+  checks.groth16_rejects_changed_bound = !(await accepts(buildClaim("compare", { op: "ge", bound: "19" }, [gAge.commitment]), gGeProof));
+  checks.groth16_false_claim_unprovable = (await proves(buildClaim("compare", { op: "ge", bound: "21" }, [gAge.commitment]), [gAge.secret])) === null;
+  checks.groth16_never_mixes_schemes = (await proves(buildClaim("compare_committed", { op: "lt" }, [low.commitment, gHigh.commitment]), [low.secret, gHigh.secret])) === null;
 
   // Arithmetic and conservation: exact integers, public and private operands, real proofs.
   const [in1, in2, out1, out2] = [await commit("u64", "700"), await commit("u64", "300"), await commit("u64", "960"), await commit("u64", "30")];

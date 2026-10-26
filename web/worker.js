@@ -30,7 +30,7 @@ const operations = {
   },
   describe: ({ proof }) => zk.describe(proof),
   // Built-in predicates: no circuit, key or setup handling on the page.
-  predicateCommit: ({ type, value }) => zk.predicate_commit(type, value),
+  predicateCommit: ({ scheme = "spartan-whir", type, value }) => zk.predicate_commit(scheme, type, value),
   predicateSetCommitment: ({ type, values }) => zk.predicate_set_commitment(type, values),
   predicateSetPath: ({ type, values, value, absent }) => zk.predicate_set_path(type, values, value, absent),
   predicateCredentialIssue: ({ type, entries }) => zk.predicate_credential_issue(type, entries),

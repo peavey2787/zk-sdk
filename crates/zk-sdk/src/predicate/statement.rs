@@ -8,26 +8,38 @@ use super::commit::Commitment;
 use super::credential;
 use super::distance;
 use super::int::{IntType, Number};
+use super::scheme::Scheme;
 use super::set::SetCommitment;
 use crate::{Result, ZkError};
+use zk_groth16::Fr;
 
-/// One named circuit input: a scalar signal, or an array signal addressed as `name[i]`.
+/// One named circuit input: a scalar signal, or an array signal addressed as `name[i]`. Values are
+/// BN254 scalars, which hold every KoalaBear element too.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct Field {
     pub name: &'static str,
-    pub values: Vec<u64>,
+    pub values: Vec<Fr>,
     pub array: bool,
 }
 
 pub(super) fn scalar(name: &'static str, value: u64) -> Field {
     Field {
         name,
-        values: vec![value],
+        values: vec![Fr::from(value)],
         array: false,
     }
 }
 
 pub(super) fn array(name: &'static str, values: Vec<u64>) -> Field {
+    Field {
+        name,
+        values: values.into_iter().map(Fr::from).collect(),
+        array: true,
+    }
+}
+
+/// An array of signals already in field form.
+pub(super) fn elements(name: &'static str, values: Vec<Fr>) -> Field {
     Field {
         name,
         values,
@@ -36,10 +48,7 @@ pub(super) fn array(name: &'static str, values: Vec<u64>) -> Field {
 }
 
 pub(super) fn digest(name: &'static str, commitment: &Commitment) -> Field {
-    array(
-        name,
-        commitment.digest().iter().map(|d| u64::from(*d)).collect(),
-    )
+    elements(name, commitment.signals())
 }
 
 pub(super) fn signed(ty: IntType) -> Field {
@@ -71,6 +80,7 @@ impl Slot {
 }
 
 /// The type shared by every commitment, or an error when they disagree or there are none.
+/// (Schemes are checked once per statement, in [`Predicate::statement`].)
 pub(super) fn common_type(commitments: &[Commitment]) -> Result<IntType> {
     let first = commitments
         .first()
@@ -173,8 +183,33 @@ impl Statement {
         &self.fields
     }
 
+    /// The proof system of this statement's commitments (see [`Predicate::statement`]).
+    pub fn scheme(&self) -> Scheme {
+        self.committed
+            .first()
+            .map_or(Scheme::SpartanWhir, Commitment::scheme)
+    }
+
+    /// Every commitment must share one scheme, and Groth16 has circuits for only some families.
+    fn checked_scheme(self) -> Result<Self> {
+        let scheme = self.scheme();
+        if let Some(other) = self.committed.iter().find(|c| c.scheme() != scheme) {
+            return Err(ZkError::Predicate(format!(
+                "cannot combine {scheme} and {} commitments in one claim",
+                other.scheme()
+            )));
+        }
+        if scheme == Scheme::Groth16 && !zk_groth16::circuits().any(|c| c == self.circuit) {
+            return Err(ZkError::Predicate(format!(
+                "`{}` has no groth16 circuit; groth16 commitments support opens, compare, range                  and compare_committed",
+                self.circuit
+            )));
+        }
+        Ok(self)
+    }
+
     /// The flat public input vector the verifier checks the proof against.
-    pub fn public_inputs(&self) -> Vec<u64> {
+    pub fn public_inputs(&self) -> Vec<Fr> {
         self.fields
             .iter()
             .flat_map(|f| f.values.iter().copied())
@@ -184,8 +219,13 @@ impl Statement {
 
 impl Predicate {
     /// The approved circuit and public inputs for this claim. Fails when a number does not fit the
-    /// committed type, committed values disagree on type, or a collection exceeds its bound.
+    /// committed type, committed values disagree on type or scheme, a collection exceeds its bound,
+    /// or the commitments' scheme has no circuit for this family.
     pub fn statement(&self) -> Result<Statement> {
+        self.lower()?.checked_scheme()
+    }
+
+    fn lower(&self) -> Result<Statement> {
         match self {
             Self::Opens { commitment } => Statement::prefixed(
                 "open",
@@ -391,8 +431,16 @@ mod tests {
             .unwrap()
             .public_inputs();
         assert_eq!(inputs.len(), 8 + 1 + 3 + 2);
-        assert_eq!(&inputs[8..12], &[0, 0, 1, 1], "unsigned, then ge = (0,1,1)");
-        assert_eq!(&inputs[12..], &[2, 3], "little-endian 16-bit limbs");
+        assert_eq!(
+            &inputs[8..12],
+            &[0, 0, 1, 1].map(Fr::from),
+            "unsigned, then ge"
+        );
+        assert_eq!(
+            &inputs[12..],
+            &[2, 3].map(Fr::from),
+            "little-endian 16-bit limbs"
+        );
     }
 
     #[test]
@@ -439,5 +487,28 @@ mod tests {
         }
         assert!(Predicate::from_json(r#"{"kind":"teleport"}"#).is_err());
         assert!(Predicate::from_json("{}").is_err());
+    }
+
+    #[test]
+    fn groth16_claims_stay_within_their_scheme_and_families() {
+        let g = Commitment::commit_in(Scheme::Groth16, IntType::U64, 5u8)
+            .unwrap()
+            .0;
+        let statement = Predicate::at_least(g, 1).statement().unwrap();
+        assert_eq!(
+            (statement.circuit(), statement.scheme()),
+            ("compare_64", Scheme::Groth16)
+        );
+        assert_eq!(
+            statement.public_inputs().len(),
+            1 + 1 + 3 + 4,
+            "one-element digest"
+        );
+        let mixed = Predicate::compare_committed(g, Op::Lt, commitment(IntType::U64));
+        assert!(mixed.statement().is_err(), "schemes never mix");
+        assert!(
+            Predicate::multiply(g, 2, g).statement().is_err(),
+            "no groth16 circuit"
+        );
     }
 }

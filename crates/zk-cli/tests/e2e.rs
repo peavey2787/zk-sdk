@@ -194,9 +194,15 @@ mod predicates {
     }
 
     fn commit(dir: &Path, name: &str, ty: &str, value: &str) -> (String, PathBuf) {
+        commit_in("spartan-whir", dir, name, ty, value)
+    }
+
+    fn commit_in(scheme: &str, dir: &Path, name: &str, ty: &str, value: &str) -> (String, PathBuf) {
         let (commitment, secret) = (dir.join(format!("{name}.c")), dir.join(format!("{name}.s")));
         ok(&[
             "commit",
+            "--scheme",
+            scheme,
             "--type",
             ty,
             "--value",
@@ -217,10 +223,21 @@ mod predicates {
 
     #[test]
     fn every_family_proves_and_verifies_in_separate_processes() {
+        core_families("spartan-whir");
+    }
+
+    #[test]
+    fn groth16_families_prove_and_verify_in_separate_processes() {
+        core_families("groth16");
+    }
+
+    /// Opening, comparison, range and committed comparison, which both schemes support.
+    fn core_families(scheme: &str) {
         let dir = tempfile::tempdir().unwrap();
-        let (age, age_secret) = commit(dir.path(), "age", "u32", "20");
-        let (low, low_secret) = commit(dir.path(), "low", "i64", "-3");
-        let (high, high_secret) = commit(dir.path(), "high", "i64", "9");
+        let (age, age_secret) = commit_in(scheme, dir.path(), "age", "u32", "20");
+        let (low, low_secret) = commit_in(scheme, dir.path(), "low", "i64", "-3");
+        let (high, high_secret) = commit_in(scheme, dir.path(), "high", "i64", "9");
+        assert_eq!(age.starts_with("groth16:"), scheme == "groth16");
         let opens = |c: &str| format!(r#"{{"kind":"opens","commitment":"{c}"}}"#);
         let ge = |bound: u32| {
             format!(r#"{{"kind":"compare","commitment":"{age}","op":"ge","bound":"{bound}"}}"#)

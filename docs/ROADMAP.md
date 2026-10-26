@@ -24,7 +24,8 @@ Keep the facade at six operations. Mark a milestone done only when its acceptanc
 - [x] Private proximity/distance (committed 2D point vs public centre and radius, exact squares, all six types): Rust, browser, native/WASM interop, differential-tested.
 
 - [x] Groth16 backend, first slice: `zk-groth16` (Groth16 on arkworks curves against snarkjs zkeys), BN254 builds of open/compare/range/compare_committed at 32/64/128 bits, public Hermez phase 1 plus a documented phase 2 (`docs/GROTH16_SETUP.md`), benchmark.
-- [ ] Groth16 integration: scheme-tagged commitments and proofs in `Predicates`, CLI and WASM; remaining families on BN254; more phase-2 contributors; optional Rapidsnark.
+- [x] Groth16 integration: scheme-tagged commitments and proofs in `Predicates` (including conjunctions), CLI (`--scheme`) and WASM/browser; native/WASM interop.
+- [ ] Groth16: remaining families on BN254; more phase-2 contributors; optional Rapidsnark; browser timings.
 
 ## Next predicate families (in order; reuse the shared gadgets in `circuits/lib`)
 

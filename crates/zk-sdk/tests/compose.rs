@@ -168,7 +168,7 @@ fn wrong_openings_and_counts_are_refused() {
 
 #[test]
 fn json_entry_points_prove_and_verify_a_conjunction() {
-    let a = predicate::commit("u32", "30").unwrap();
+    let a = predicate::commit("spartan-whir", "u32", "30").unwrap();
     let claim = format!(
         r#"{{"kind":"all","claims":[{{"kind":"compare","commitment":"{c}","op":"ge","bound":"18"}},{{"kind":"compare","commitment":"{c}","op":"le","bound":"65"}}]}}"#,
         c = a.commitment

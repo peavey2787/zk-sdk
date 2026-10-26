@@ -130,7 +130,7 @@ fn json_entry_points_lower_and_prove_a_transition() {
     use zk_sdk::predicate;
     let made: Vec<_> = ["100", "10", "70", "38"]
         .iter()
-        .map(|v| predicate::commit("u64", v).unwrap())
+        .map(|v| predicate::commit("spartan-whir", "u64", v).unwrap())
         .collect();
     let text = |i: usize| made[i].commitment.clone();
     let spec = format!(

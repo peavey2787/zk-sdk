@@ -14,7 +14,7 @@ use super::bundle;
 use super::claim::{Op, Operand, Predicate};
 use super::commit::{Commitment, Opening, FIELD_MODULUS};
 use super::credential::{CredentialEntry, CredentialIssuer};
-use super::engine::assignment;
+use super::engine::{assignment, koalabear_inputs};
 use super::int::{IntType, Number, Width};
 use super::set::{SetPath, SetTree};
 
@@ -368,6 +368,7 @@ fn agree(case: &Case, cache: &mut HashMap<String, WitnessCalculator>, tally: &mu
     let expected = case.claim.holds(&values, case.path.as_ref()).unwrap();
     // A path of the wrong kind cannot even be assigned: that is "no witness" too.
     let satisfiable = assignment(&statement, &case.openings, case.path.as_ref())
+        .and_then(|signals| koalabear_inputs(&signals))
         .map(|inputs| {
             calculator(cache, statement.circuit())
                 .witness(&inputs)

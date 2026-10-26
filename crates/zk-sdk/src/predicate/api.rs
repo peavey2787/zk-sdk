@@ -11,6 +11,7 @@ use super::compose::{Claim, Conjunction, ConjunctionWitness};
 use super::credential::{Credential, CredentialEntry, CredentialIssuer, Presentation};
 use super::engine::{PredicateProof, Predicates, Witness};
 use super::int::{IntType, Number};
+use super::scheme::Scheme;
 use super::set::{SetPath, SetTree};
 use super::transition::{Rule, Transition};
 use crate::{Result, ZkError};
@@ -35,10 +36,12 @@ impl Committed {
     }
 }
 
-pub fn commit(ty: &str, value: &str) -> Result<Committed> {
+/// Commit to `value` of type `ty` for `scheme` (`spartan-whir` or `groth16`).
+pub fn commit(scheme: &str, ty: &str, value: &str) -> Result<Committed> {
+    let scheme: Scheme = scheme.parse()?;
     let ty: IntType = ty.parse()?;
     let value: Number = value.parse()?;
-    let (commitment, opening) = Commitment::commit(ty, value)?;
+    let (commitment, opening) = Commitment::commit_in(scheme, ty, value)?;
     Ok(Committed {
         commitment: commitment.to_text(),
         secret: opening.to_secret_json(),
@@ -333,16 +336,24 @@ pub fn verify(zk: &Predicates, claim_json: &str, proof: &[u8]) -> Result<()> {
     }
 }
 
-/// Circuit name, attained security level and public inputs of a claim, for display and
-/// interoperability checks.
+/// Circuit name, scheme (with the attained security level for Spartan-WHIR) and public inputs of
+/// a claim, for display and interoperability checks.
 pub fn describe(zk: &Predicates, claim_json: &str) -> Result<String> {
     let describe_one = |claim: &Predicate| -> Result<String> {
         let statement = claim.statement()?;
+        let scheme = match statement.scheme() {
+            Scheme::SpartanWhir => format!("{}-bit", zk.security_bits(statement.circuit())?),
+            Scheme::Groth16 => Scheme::Groth16.to_string(),
+        };
+        let inputs: Vec<String> = statement
+            .public_inputs()
+            .iter()
+            .map(ToString::to_string)
+            .collect();
         Ok(format!(
-            "{} {}-bit {:?}",
+            "{} {scheme} [{}]",
             statement.circuit(),
-            zk.security_bits(statement.circuit())?,
-            statement.public_inputs()
+            inputs.join(", ")
         ))
     };
     match Claim::from_json(claim_json)? {
@@ -366,7 +377,7 @@ mod tests {
     #[test]
     fn json_round_trip_proves_and_verifies() {
         let zk = Predicates::new();
-        let made = commit("i64", "-4").unwrap();
+        let made = commit("spartan-whir", "i64", "-4").unwrap();
         let claim = format!(
             r#"{{"kind":"compare","commitment":"{}","op":"lt","bound":"0"}}"#,
             made.commitment
@@ -379,6 +390,25 @@ mod tests {
         assert!(verify(&zk, &claim.replace("\"lt\"", "\"gt\""), &proof).is_err());
         assert!(prove(&zk, &claim, vec![]).is_err());
         assert!(prove(&zk, &claim, vec![made.secret.clone(); 3]).is_err());
-        assert!(commit("u7", "1").is_err() && commit("u32", "-1").is_err());
+        assert!(commit("spartan-whir", "u7", "1").is_err());
+        assert!(commit("spartan-whir", "u32", "-1").is_err());
+        assert!(commit("plonk", "u32", "1").is_err());
+    }
+
+    #[test]
+    fn groth16_json_round_trip_proves_verifies_and_describes() {
+        let zk = Predicates::new();
+        let made = commit("groth16", "u32", "30").unwrap();
+        assert!(made.commitment.starts_with("groth16:u32:"));
+        let claim = format!(
+            r#"{{"kind":"range","commitment":"{}","lo":"18","hi":"65","lo_inclusive":true,"hi_inclusive":true}}"#,
+            made.commitment
+        );
+        let proof = prove(&zk, &claim, vec![made.secret.clone()]).unwrap();
+        verify(&zk, &claim, &proof).unwrap();
+        assert!(describe(&zk, &claim)
+            .unwrap()
+            .starts_with("range_32 groth16 ["));
+        assert!(verify(&zk, &claim.replace("\"65\"", "\"64\""), &proof).is_err());
     }
 }

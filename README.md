@@ -34,6 +34,8 @@ zk.verify(&claim, &proof)?;                                      // needs only t
 
 Opening, comparison, range, committed comparison, and exact-integer arithmetic (sums, balances, conservation with fees and explicit mint/burn, products, bounded division), over `u32 i32 u64 i64 u128 i128`, through Rust, the `zk predicate` CLI and the browser, with portable proofs verified across all of them. See [PREDICATES](docs/PREDICATES.md).
 
+Commitments default to Spartan-WHIR (transparent, post-quantum). For opening, comparison, range and committed comparison you can instead commit with `Scheme::Groth16` (`zk predicate commit --scheme groth16`): 136-byte proofs in 20-60 ms, at the cost of a trusted setup and no post-quantum security ([GROTH16_SETUP](docs/GROTH16_SETUP.md)).
+
 ## Six operations
 
 | Method | Purpose |

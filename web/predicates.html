@@ -28,6 +28,10 @@ responsive during multi-second proofs. Private values never leave this tab. Back
   <legend>Predicate</legend>
   <label>Family <select id="family"></select></label>
   <label>Integer type <select id="type"></select></label>
+  <label>Proof system <select id="scheme">
+    <option value="spartan-whir" selected>Spartan-WHIR (transparent, post-quantum)</option>
+    <option value="groth16">Groth16 (trusted setup, not post-quantum; opens/compare/range/pairs only)</option>
+  </select></label>
   <label id="rowValueA">Private value <input id="valueA" type="text" value="20"></label>
   <label id="rowValueB">Second private value <input id="valueB" type="text" value="30"></label>
   <label id="rowInputs">Private inputs / values (comma separated, at most 8 in all)
