@@ -23,12 +23,14 @@ OUT = ROOT / "target" / "validation"
 PY = sys.executable
 CARGO = ["cargo"]
 
+# The published Groth16 phase-1 file, checked against its published hash; every Groth16 step needs it.
+PHASE1 = ("phase1", [PY, "scripts/groth16_setup.py", "--fetch"])
 FAST = [
     ("layout", [PY, "scripts/check-layout.py"]),
     ("pins", None),
     ("fmt", CARGO + ["fmt", "--all", "--", "--check"]),
     ("clippy", CARGO + ["clippy", "--workspace", "--all-targets", "--all-features", "--", "-D", "warnings"]),
-    ("phase1", [PY, "scripts/groth16_setup.py", "--fetch"]),
+    PHASE1,
     ("test", CARGO + ["test", "--workspace", "--all-targets", "--all-features", "--release"]),
 ]
 FULL = [
@@ -41,10 +43,11 @@ FULL = [
     ("audit", CARGO + ["audit", "--deny", "warnings"]),
 ]
 GROTH16_ALL = [
-    ("phase1", [PY, "scripts/groth16_setup.py", "--fetch"]),
+    PHASE1,
     ("groth16-reference-all", [PY, "scripts/groth16_setup.py", "--reference", "--all"]),
 ]
 PERF = [
+    PHASE1,
     ("wasm-build", [PY, "scripts/build_wasm.py"]),
     ("perf-native", [PY, "scripts/perf_gate.py"]),
     ("perf-browser", [PY, "scripts/browser_test.py", "perftest.html"]),

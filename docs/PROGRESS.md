@@ -10,7 +10,7 @@ Measured on Windows 11, native `x86_64-pc-windows-msvc`, rustc 1.98.1; wasm in h
 | Native <-> wasm interop | **Validated** | `scripts/interop.py`: 4 producer/verifier pairs x 3 circuits, with negatives |
 | Negative tests | **Validated** | wrong witness, wrong statement, corrupted/truncated proof, foreign vk, unsupported security |
 | Security sweep | **Validated** | 100..=118 bits x 3 soundness modes on age_over; the advertised range was narrowed to match |
-| Linux native, interop, browser | **Validated in CI** | GitHub Actions ubuntu-latest and windows-latest ran `run_all.py full` on the first push |
+| Linux native, interop, browser | **Validated in CI through `3623bc0` only** | GitHub Actions ubuntu-latest ran `run_all.py full` green up to `3623bc0`; the Groth16 commits since failed in CI at the phase-1 download (HTTP 403 to urllib's default User-Agent, now fixed), so Linux is not validated for them until CI is green again. No local Linux run. |
 | Firefox / Safari | **NOT VALIDATED** | only Chromium-based Edge was run |
 | macOS | **NOT VALIDATED** | |
 | Sweep on circuits other than age_over | Not done | |

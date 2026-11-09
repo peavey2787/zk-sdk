@@ -60,7 +60,10 @@ def fetch(power):
         PTAU_DIR.mkdir(parents=True, exist_ok=True)
         print(f"downloading {url}")
         partial = ptau.with_suffix(".partial")
-        urllib.request.urlretrieve(url, partial)
+        # The host refuses urllib's default User-Agent (HTTP 403), so name the client.
+        request = urllib.request.Request(url, headers={"User-Agent": "zk-sdk-groth16-setup"})
+        with urllib.request.urlopen(request) as response, open(partial, "wb") as out:
+            shutil.copyfileobj(response, out)
         partial.replace(ptau)
     print(zk("phase1", "--ptau", ptau).strip())
 

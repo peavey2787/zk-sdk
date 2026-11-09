@@ -39,7 +39,7 @@ Keep the facade at six operations. Mark a milestone done only when its acceptanc
 
 ## Open
 
-- [ ] Run `run-all-linux.sh full` on Linux and add Linux-produced interop (currently NOT VALIDATED).
+- [ ] Linux: CI (ubuntu-latest) validated `run_all.py full` through `3623bc0` only (see PROGRESS); get CI green on the current commit, run `run-all-linux.sh full` on a local Linux host and add Linux-produced interop.
 - [ ] Run the browser test on Firefox and Safari.
 - [ ] Sweep the security range on the other circuits and add reference-witness differential tests for them.
 - [x] Multi-threaded browser proving (`web/pkg-threads`, cross-origin-isolated pages) and native AVX2 auto-dispatch.
